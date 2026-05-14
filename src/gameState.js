@@ -71,7 +71,7 @@ export function checkCargoDecay() {
     if (!loc || !loc.cargoSeen) return;
 
     // 每200time检测一次
-    if (state.time > 0 && state.time % 200 === 0 && state.time !== state.lastDecayCheck) {
+    if (state.time > 0 && state.time - state.lastDecayCheck >= 200) {
         state.lastDecayCheck = state.time;
 
         // 检测所有未被拾取的资源包
