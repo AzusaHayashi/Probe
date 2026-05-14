@@ -3,25 +3,51 @@ import { WorldManager } from './worldManager.js';
 import { setupControls } from './controls.js';
 
 let state = {
-    mode: 'WORLD', 
+    mode: 'WORLD',
     worldPos: { x: 5, y: 5 },
     map: [],
-    pathStack: [], 
+    pathStack: [],
     probe: { x: 0, y: 0, facing: 'd' },
     evacConfirm: false,
     time: 0,
-    resources: 0
+    resources: 0,
+    saveConfirm: false
 };
 
-/**
- * 初始化：使用随机种子解决“每次刷新都一样”的问题
- */
 function init() {
+    localStorage.removeItem('scavenge_world_data');
     const randomSeed = Math.floor(Math.random() * 999999);
-    WorldManager.init(randomSeed); 
-    
+    WorldManager.init(randomSeed);
+
     state.worldPos = { ...WorldManager.state.playerPos };
     setupControls(handleMove, handleExec);
+
+    const importInput = document.getElementById('import-input');
+    const importBtn = document.getElementById('btn-import');
+    importBtn.addEventListener('click', () => importInput.click());
+
+    importInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try {
+                const data = JSON.parse(ev.target.result);
+                localStorage.setItem('scavenge_world_data', JSON.stringify(data));
+                WorldManager.loadFromStorage();
+                state.worldPos = { ...WorldManager.state.playerPos };
+                document.getElementById('log').style.color = "#55ff55";
+                document.getElementById('log').innerText = "SAVE IMPORTED SUCCESSFULLY.";
+                render();
+            } catch (err) {
+                document.getElementById('log').style.color = "#ff5555";
+                document.getElementById('log').innerText = "IMPORT FAILED: INVALID FILE.";
+            }
+        };
+        reader.readAsText(file);
+        importInput.value = '';
+    });
+
     render();
 }
 
@@ -44,8 +70,39 @@ function handleExec() {
         if (['F', 'S', 'M'].includes(tile)) {
             enterInstance();
         } else if (tile === 'E') {
-            WorldManager.saveToStorage();
-            log.innerText = "DATABASE SAVED TO LOCAL STORAGE.";
+            if (!state.saveConfirm) {
+                state.saveConfirm = true;
+                log.style.color = "#ffff00";
+                log.innerText = "CONFIRM SAVE? (Press EXEC again to SAVE, or move to cancel)";
+            } else {
+                WorldManager.saveToStorage();
+                log.style.color = "#55ff55";
+                log.innerText = "DATABASE SAVED TO LOCAL STORAGE.";
+                state.saveConfirm = false;
+            }
+        } else if (tile === 'I') {
+            if (!state.saveConfirm) {
+                state.saveConfirm = true;
+                log.style.color = "#ffff00";
+                log.innerText = "EXPORT: Press EXEC | IMPORT: Use file input below";
+            } else {
+                const saveData = localStorage.getItem('scavenge_world_data');
+                if (saveData) {
+                    const blob = new Blob([saveData], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `probe_save_${Date.now()}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    log.style.color = "#55ff55";
+                    log.innerText = "SAVE EXPORTED.";
+                } else {
+                    log.style.color = "#ff5555";
+                    log.innerText = "NO SAVE DATA.";
+                }
+                state.saveConfirm = false;
+            }
         }
     } else {
         // 撤离逻辑：检查是否在底座 'H' 上
@@ -170,10 +227,10 @@ function enterInstance() {
 }
 
 function exitInstance() {
-    // 核心：离开时把当前改动过的地图同步回管理器
     WorldManager.updateInstanceState(state.worldPos.x, state.worldPos.y, state.map);
     state.mode = 'WORLD';
     state.evacConfirm = false;
+    state.saveConfirm = false;
 }
 
 // --- 渲染 (保持不变) ---
@@ -230,6 +287,7 @@ function moveInWorld(key) {
     if (nx >= 0 && nx < 50 && ny >= 0 && ny < 50) {
         state.worldPos.x = nx; state.worldPos.y = ny;
         WorldManager.state.playerPos = { x: nx, y: ny };
+        state.saveConfirm = false;
     }
 }
 
