@@ -58,7 +58,10 @@ export function generateDungeon(seed) {
         }
     }
 
-    return { map, startRoom: rooms[0] };
+    return { 
+        map: map, 
+        startRoom: rooms[0] 
+    };
 }
 
 function isRoomInternal(x, y, rooms) {
