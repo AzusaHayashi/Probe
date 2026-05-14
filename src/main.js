@@ -135,6 +135,25 @@ function handleExec() {
 
 // --- 逻辑模块 ---
 
+/**
+ * 推进时间并处理相关逻辑（如资源包移动）
+ */
+function advanceTime(amount) {
+    state.time += amount;
+
+    // 只有在探索模式下，时间增加才会推动资源包移动
+    if (state.mode === 'INSTANCE' && state.movingCargo.length > 0) {
+        // 时间增加 amount，资源包移动 amount * transportSpeed
+        const moveDist = amount * state.transportSpeed;
+        state.movingCargo.forEach(cargo => {
+            cargo.pathIndex -= moveDist;
+        });
+        checkCargoCollection(); // 检查是否到达回收点
+        checkCargoDecay();      // 检查资源包衰减
+        updateInstanceCargoVisibility(); // 更新可见状态
+    }
+}
+
 function moveInInstance(key) {
     const moves = {'w':[0,-1],'s':[0,1],'a':[-1,0],'d':[1,0]};
     if (!moves[key]) return;
@@ -184,17 +203,9 @@ function moveInInstance(key) {
                 state.probe.x = nx; 
                 state.probe.y = ny;
                 state.pathStack.push({x: nx, y: ny, c: target});
-                state.time += 1;
+                advanceTime(1);
                 state.upgradeConfirm = false; // 移动时重置确认状态
                 state.speedConfirm = false;
-
-                // 资源包向 H (索引 0) 移动
-                state.movingCargo.forEach(cargo => {
-                    cargo.pathIndex -= state.transportSpeed;
-                });
-                checkCargoCollection(); // 移动后立即检查回收
-                checkCargoDecay(); // 检查资源包衰减
-                updateInstanceCargoVisibility(); // 更新资源包可见状态
                 render(); // 即时更新管道和资源包位置
             }
         }
@@ -313,7 +324,7 @@ function executeAction() {
             } else {
                 state.resources -= 5;
                 state.tetherMax += 1;
-                state.time += 15;
+                advanceTime(15);
                 state.upgradeConfirm = false;
                 log.style.color = "#55ff55";
                 log.innerText = "TETHER CAPACITY UPGRADED! (+1)";
@@ -354,7 +365,7 @@ function executeAction() {
             if(state.map[ty] && state.map[ty][tx] === '+') {
                 state.map[ty][tx] = '.'; // 门变地板
                 const cost = Math.floor(Math.random() * 3) + 3; // 3 to 5
-                state.time += cost;
+                advanceTime(cost);
                 log.innerText = `DOOR BYPASSED. (+${cost} TIME)`;
                 acted = true;
                 break;
@@ -571,7 +582,7 @@ function moveInWorld(key) {
     if (nx >= 0 && nx < 50 && ny >= 0 && ny < 50) {
         state.worldPos.x = nx; state.worldPos.y = ny;
         WorldManager.state.playerPos = { x: nx, y: ny };
-        state.time += 5; // 世界上移动消耗 5 分钟
+        advanceTime(5); // 世界上移动消耗 5 分钟
         state.saveConfirm = false;
     }
 }
