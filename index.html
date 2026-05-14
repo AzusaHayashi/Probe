@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Probe Terminal</title>
+    <style>
+        body { background: #000; color: #0f0; font-family: monospace; display: flex; flex-direction: column; align-items: center; height: 100vh; margin: 0; overflow: hidden; }
+        #game-screen { white-space: pre; line-height: 1; border: 1px solid #333; margin-top: 10px; font-size: 12px; }
+        #ui-panel { width: 100%; max-width: 400px; padding: 10px; text-align: center; }
+        /* 移动端十字键样式 */
+        .controls { position: fixed; bottom: 20px; left: 20px; display: grid; grid-template-columns: repeat(3, 50px); grid-template-rows: repeat(3, 50px); gap: 5px; opacity: 0.6; }
+        .btn { background: #222; border: 1px solid #0f0; color: #0f0; display: flex; align-items: center; justify-content: center; user-select: none; }
+        .btn:active { background: #0f0; color: #000; }
+        #btn-ok { position: fixed; bottom: 45px; right: 20px; width: 60px; height: 60px; border-radius: 50%; }
+    </style>
+</head>
+<body>
+
+<div id="ui-panel">
+    TIME: <span id="time-display">0</span> MIN | TETHER: <span id="tether-display">0</span>/20
+</div>
+<div id="game-screen"></div>
+
+<div class="controls">
+    <div></div><div class="btn" onclick="handleInput('ArrowUp')">↑</div><div></div>
+    <div class="btn" onclick="handleInput('ArrowLeft')">←</div><div></div><div class="btn" onclick="handleInput('ArrowRight')">→</div>
+    <div></div><div class="btn" onclick="handleInput('ArrowDown')">↓</div><div></div>
+</div>
+<div id="btn-ok" class="btn" onclick="handleInput('Enter')">OK</div>
+
+<script>
+    const SIZE = 40;
+    const MAX_TETHER = 20;
+    let time = 0;
+    let tetherLength = 0;
+    let probe = { x: 20, y: 20, facing: 'ArrowUp' };
+    
+    // 初始化地图 (40x40)
+    let map = Array(SIZE).fill().map(() => Array(SIZE).fill('.'));
+
+    function draw() {
+        let screen = "";
+        for (let y = 0; y < SIZE; y++) {
+            let line = "";
+            for (let x = 0; x < SIZE; x++) {
+                if (x === probe.x && y === probe.y) {
+                    line += getProbeChar(); // 根据方向显示不同字符
+                } else {
+                    line += map[y][x];
+                }
+            }
+            screen += line + "\n";
+        }
+        document.getElementById('game-screen').innerText = screen;
+        document.getElementById('time-display').innerText = time;
+        document.getElementById('tether-display').innerText = tetherLength;
+    }
+
+    function getProbeChar() {
+        const chars = { 'ArrowUp': '^', 'ArrowDown': 'v', 'ArrowLeft': '<', 'ArrowRight': '>' };
+        return chars[probe.facing];
+    }
+
+    function handleInput(key) {
+        let moved = false;
+        const opposites = { 'ArrowUp': 'ArrowDown', 'ArrowDown': 'ArrowUp', 'ArrowLeft': 'ArrowRight', 'ArrowRight': 'ArrowLeft' };
+
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) {
+            if (key === probe.facing) {
+                // 前进
+                if (tetherLength < MAX_TETHER) {
+                    moveForward();
+                    tetherLength++;
+                    time += 2; // 前进耗时2分钟
+                    moved = true;
+                }
+            } else if (key === opposites[probe.facing]) {
+                // 后退
+                if (tetherLength > 0) {
+                    moveBack();
+                    tetherLength--;
+                    time += 1; // 后退耗时1分钟
+                    moved = true;
+                }
+            } else {
+                // 转向
+                probe.facing = key;
+                time += 1; // 转向耗时1分钟
+                moved = true;
+            }
+        } else if (key === 'Enter' || key === ' ') {
+            console.log("执行动作");
+            time += 5;
+            moved = true;
+        }
+
+        if (moved) draw();
+    }
+
+    function moveForward() {
+        if (probe.facing === 'ArrowUp' && probe.y > 0) probe.y--;
+        if (probe.facing === 'ArrowDown' && probe.y < SIZE - 1) probe.y++;
+        if (probe.facing === 'ArrowLeft' && probe.x > 0) probe.x--;
+        if (probe.facing === 'ArrowRight' && probe.x < SIZE - 1) probe.x++;
+    }
+
+    function moveBack() {
+        // 后退逻辑恰好与前进方向相反
+        if (probe.facing === 'ArrowUp' && probe.y < SIZE - 1) probe.y++;
+        if (probe.facing === 'ArrowDown' && probe.y > 0) probe.y--;
+        if (probe.facing === 'ArrowLeft' && probe.x < SIZE - 1) probe.x++;
+        if (probe.facing === 'ArrowRight' && probe.x > 0) probe.x--;
+    }
+
+    // 监听PC键盘
+    window.addEventListener('keydown', (e) => {
+        let key = e.key;
+        if (key === 'w') key = 'ArrowUp';
+        if (key === 's') key = 'ArrowDown';
+        if (key === 'a') key = 'ArrowLeft';
+        if (key === 'd') key = 'ArrowRight';
+        handleInput(key);
+    });
+
+    draw();
+</script>
+</body>
+</html>
