@@ -141,7 +141,7 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
-
+vite.config.js
 
 #笔记
 *.ini
