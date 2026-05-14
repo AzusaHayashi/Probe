@@ -12,3 +12,14 @@ body { background: #000; color: #003300; font-family: 'Courier New', monospace; 
 .action-btn { height: 135px; width: 80px; }
 .btn:active { background: #55ff55; color: #000; }
 #log { color: #ffff55; height: 20px; font-size: 12px; margin-top: 5px; }
+
+#game-container {
+    font-family: 'Courier New', monospace;
+    background: #000;
+    color: #0f0; /* 经典的荧光绿 */
+    text-shadow: 0 0 5px #0f0;
+    /* 模拟老式显示器的扫描线效果 */
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+    background-size: 100% 2px, 3px 100%;
+}
