@@ -1,0 +1,14 @@
+body { background: #000; color: #003300; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; margin: 0; overflow: hidden; touch-action: none; }
+#stats { width: 100%; max-width: 500px; padding: 10px; font-size: 14px; color: #55ff55; display: flex; justify-content: space-around; border-bottom: 1px solid #003300; }
+#game-screen { line-height: 12px; letter-spacing: 2px; font-size: 12px; white-space: pre; background: #000; padding: 5px; border: 1px solid #222; margin: 5px; cursor: default; }
+
+.lit { color: #55ff55; text-shadow: 0 0 5px #55ff55; } 
+.dim { color: #004400; } 
+.obj-highlight { color: #ffffff !important; text-shadow: 0 0 8px #ffffff; font-weight: bold; }
+
+.ctrl-layer { position: fixed; bottom: 15px; width: 100%; max-width: 500px; display: flex; justify-content: space-between; padding: 0 20px; box-sizing: border-box; }
+.d-pad { display: grid; grid-template-columns: repeat(3, 65px); gap: 5px; }
+.btn { width: 60px; height: 60px; background: rgba(0,20,0,0.8); border: 1px solid #55ff55; color: #55ff55; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-weight: bold; user-select: none; cursor: pointer; }
+.action-btn { height: 135px; width: 80px; }
+.btn:active { background: #55ff55; color: #000; }
+#log { color: #ffff55; height: 20px; font-size: 12px; margin-top: 5px; }
