@@ -1,5 +1,5 @@
-import { CONFIG } from './src/constants.js';
-import { generateDungeon } from './src/mapGen.js';
+import { CONFIG } from '/src/constants.js';
+import { generateDungeon } from '/src/mapGen.js';
 
 let state = {
     map: [],
