@@ -124,8 +124,7 @@ export function moveInInstance(key) {
     // 前进逻辑
     else {
         let nx = state.probe.x + dx, ny = state.probe.y + dy;
-        const currentMapSize = state.map.length;
-        if(nx >= 0 && nx < currentMapSize && ny >= 0 && ny < currentMapSize) {
+        if(ny >= 0 && ny < state.map.length && nx >= 0 && nx < state.map[ny].length) {
             let target = state.map[ny][nx];
             // 允许经过地板(.)和资源(O)，墙(#)和门(+)不能通过
             if((target === '.' || target === 'O' || target === 'T' || target === 'S') && state.pathStack.length < state.tetherMax) {

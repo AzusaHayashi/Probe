@@ -88,7 +88,7 @@ export function renderInstance() {
     // 创建一个坐标映射，方便查找该格子上是否有正在移动的资源包
     const cargoMap = new Set();
     state.movingCargo.forEach(c => {
-        const pos = state.pathStack[c.pathIndex];
+        const pos = state.pathStack[Math.floor(c.pathIndex)];
         if (pos) cargoMap.add(`${pos.x},${pos.y}`);
     });
 
