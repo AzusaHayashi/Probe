@@ -1,4 +1,4 @@
-import { CONFIG } from '/src/constants.js';
+import { CONFIG } from './constants.js';
 
 export function generateDungeon() {
     let map = Array(CONFIG.SIZE).fill().map(() => Array(CONFIG.SIZE).fill('#'));
@@ -16,56 +16,41 @@ export function generateDungeon() {
         }
     }
 
-    // 2. 严格 L 型走廊生成逻辑
+    // 2. 走廊生成
     for(let i=0; i<rooms.length-1; i++) {
         let r1 = rooms[i], r2 = rooms[i+1];
         let curX = r1.cx, curY = r1.cy;
-
-        // 水平移动
         while(curX !== r2.cx) {
             curX += (r2.cx > curX ? 1 : -1);
             placePath(curX, curY, map);
         }
-        // 垂直移动
         while(curY !== r2.cy) {
             curY += (r2.cy > curY ? 1 : -1);
             placePath(curX, curY, map);
         }
     }
 
-    return { map, rooms };
+    // 核心修复：在这里返回结果，并确保 startRoom 存在
+    return { 
+        map: map, 
+        startRoom: rooms[0] || {cx: 0, cy: 0} 
+    };
 }
 
-/**
- * 核心修改：智能放置路径和门
- * 逻辑：如果挨着房间地板('.')，且周围没有门('+')，则放门；否则放走廊地板('.')
- */
 function placePath(x, y, map) {
-    // 如果当前位置已经是房间地板，则不需要处理
     if (map[y][x] === '.') return;
-
-    // 检查上下左右是否有房间地板
-    const adjToRoom = [
-        [0, 1], [0, -1], [1, 0], [-1, 0]
-    ].some(([dx, dy]) => {
+    const adjToRoom = [[0, 1], [0, -1], [1, 0], [-1, 0]].some(([dx, dy]) => {
         let nx = x + dx, ny = y + dy;
         return map[ny] && map[ny][nx] === '.';
     });
 
     if (adjToRoom) {
-        // 进一步检查周围（包括对角线）是否已经存在门了
-        const hasNearbyDoor = [
-            [0, 1], [0, -1], [1, 0], [-1, 0],
-            [1, 1], [1, -1], [-1, 1], [-1, -1]
-        ].some(([dx, dy]) => {
+        const hasNearbyDoor = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]].some(([dx, dy]) => {
             let nx = x + dx, ny = y + dy;
             return map[ny] && map[ny][nx] === '+';
         });
-
-        // 只有附近没门时，才把这格变成门
         map[y][x] = hasNearbyDoor ? '.' : '+';
     } else {
-        // 远离房间的地方，全是走廊地板
         map[y][x] = '.';
     }
 }
