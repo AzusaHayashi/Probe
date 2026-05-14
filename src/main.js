@@ -11,7 +11,14 @@ let state = {
     evacConfirm: false,
     time: 0,
     resources: 0,
-    saveConfirm: false
+    saveConfirm: false,
+    movingCargo: [],
+    upgradeConfirm: false,
+    speedConfirm: false,
+    tetherMax: 35,
+    transportSpeed: 1,
+    currentInstanceKey: null,
+    lastDecayCheck: 0
 };
 
 function init() {
@@ -67,7 +74,7 @@ function handleExec() {
     const log = document.getElementById('log');
     if (state.mode === 'WORLD') {
         const tile = WorldManager.state.overworld[state.worldPos.y][state.worldPos.x];
-        if (['F', 'S', 'M'].includes(tile)) {
+        if (['F', 'S', 'M', 'W'].includes(tile)) {
             enterInstance();
         } else if (tile === 'E') {
             if (!state.saveConfirm) {
@@ -76,6 +83,8 @@ function handleExec() {
                 log.innerText = "CONFIRM SAVE? (Press EXEC again to SAVE, or move to cancel)";
             } else {
                 WorldManager.saveToStorage();
+                const key = `${state.worldPos.x},${state.worldPos.y}`;
+                if (WorldManager.state.instances[key]) WorldManager.state.instances[key].visited = true;
                 log.style.color = "#55ff55";
                 log.innerText = "DATABASE SAVED TO LOCAL STORAGE.";
                 state.saveConfirm = false;
@@ -95,6 +104,8 @@ function handleExec() {
                     a.download = `probe_save_${Date.now()}.json`;
                     a.click();
                     URL.revokeObjectURL(url);
+                    const key = `${state.worldPos.x},${state.worldPos.y}`;
+                    if (WorldManager.state.instances[key]) WorldManager.state.instances[key].visited = true;
                     log.style.color = "#55ff55";
                     log.innerText = "SAVE EXPORTED.";
                 } else {
@@ -133,24 +144,40 @@ function moveInInstance(key) {
 
     // 回退逻辑
     if(last && (state.probe.x + dx === last.x && state.probe.y + dy === last.y)) {
+        let removedIndex = state.pathStack.length - 1;
         let curr = state.pathStack.pop();
         if (state.map[curr.y][curr.x] !== 'H') {
             state.map[curr.y][curr.x] = curr.c; 
         }
+
+        // 资源包随探头回退
+        state.movingCargo.forEach(cargo => {
+            if (cargo.pathIndex === removedIndex) {
+                cargo.pathIndex = state.pathStack.length - 1;
+            }
+        });
+        checkCargoCollection(); // 回退后立即检查回收
+        checkCargoDecay(); // 检查资源包衰减
+        updateInstanceCargoVisibility(); // 更新资源包可见状态
+        render(); // 即时更新管道和资源包位置
+
         state.probe.x = last.x; 
         state.probe.y = last.y;
     } 
     // 转向逻辑
     else if(key !== state.probe.facing) {
         state.probe.facing = key;
+        updateInstanceCargoVisibility(); // 转向也会改变视野
+        render();
     } 
     // 前进逻辑
     else {
         let nx = state.probe.x + dx, ny = state.probe.y + dy;
-        if(nx >= 0 && nx < CONFIG.SIZE && ny >= 0 && ny < CONFIG.SIZE) {
+        const currentMapSize = state.map.length;
+        if(nx >= 0 && nx < currentMapSize && ny >= 0 && ny < currentMapSize) {
             let target = state.map[ny][nx];
             // 允许经过地板(.)和资源(O)，墙(#)和门(+)不能通过
-            if((target === '.' || target === 'O') && state.pathStack.length < CONFIG.MAX_TETHER) {
+            if((target === '.' || target === 'O' || target === 'T' || target === 'S') && state.pathStack.length < state.tetherMax) {
                 state.map[state.probe.y][state.probe.x] = (dx !== 0) ? '-' : '|';
                 if(state.pathStack.length === 1) state.map[state.probe.y][state.probe.x] = 'H';
                 
@@ -158,6 +185,102 @@ function moveInInstance(key) {
                 state.probe.y = ny;
                 state.pathStack.push({x: nx, y: ny, c: target});
                 state.time += 1;
+                state.upgradeConfirm = false; // 移动时重置确认状态
+                state.speedConfirm = false;
+
+                // 资源包向 H (索引 0) 移动
+                state.movingCargo.forEach(cargo => {
+                    cargo.pathIndex -= state.transportSpeed;
+                });
+                checkCargoCollection(); // 移动后立即检查回收
+                checkCargoDecay(); // 检查资源包衰减
+                updateInstanceCargoVisibility(); // 更新资源包可见状态
+                render(); // 即时更新管道和资源包位置
+            }
+        }
+    }
+}
+
+/**
+ * 检查并回收已到达本体的资源包
+ */
+function checkCargoCollection() {
+    const initialCount = state.movingCargo.length;
+    state.movingCargo = state.movingCargo.filter(cargo => {
+        if (cargo.pathIndex <= 0) {
+            state.resources += 1;
+            return false;
+        }
+        return true;
+    });
+
+    if (state.movingCargo.length < initialCount) {
+        const log = document.getElementById('log');
+        log.style.color = "#55ff55";
+        log.innerText = "CARGO SECURED (+1)";
+    }
+}
+
+/**
+ * 每200time检测一次视野内未被拾取的资源包，有1/20概率消失
+ */
+function checkCargoDecay() {
+    if (!state.currentInstanceKey) return;
+
+    const loc = WorldManager.state.instances[state.currentInstanceKey];
+    if (!loc || !loc.cargoSeen) return;
+
+    // 每200time检测一次
+    if (state.time > 0 && state.time % 200 === 0 && state.time !== state.lastDecayCheck) {
+        state.lastDecayCheck = state.time;
+
+        // 检测所有未被拾取的资源包
+        for (let y = 0; y < state.map.length; y++) {
+            for (let x = 0; x < state.map[y].length; x++) {
+                if (state.map[y][x] === 'O') {
+                    let key = `${x},${y}`;
+                    if (loc.cargoSeen.has(key) && !loc.cargoGone?.has(key)) {
+                        if (Math.random() < 1/20) {
+                            if (!loc.cargoGone) loc.cargoGone = new Set();
+                            loc.cargoGone.add(key);
+                            state.map[y][x] = '.';
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 更新当前视野内资源包的可见状态
+ */
+function updateInstanceCargoVisibility() {
+    if (!state.currentInstanceKey) return;
+
+    const loc = WorldManager.state.instances[state.currentInstanceKey];
+    if (!loc) return;
+
+    if (!loc.revealedPoints) loc.revealedPoints = new Set();
+
+    const px = state.probe.x;
+    const py = state.probe.y;
+    
+    // 遍历地图，根据 isVisible 逻辑更新揭示点
+    for (let y = 0; y < state.map.length; y++) {
+        for (let x = 0; x < state.map[y].length; x++) {
+            if (isVisible(x, y)) {
+                const key = `${x},${y}`;
+                loc.revealedPoints.add(key);
+
+                if (state.map[y][x] === 'O') {
+                    loc.cargoSeen.add(key);
+                    // 如果之前标记为消失，重新出现
+                    if (loc.cargoGone?.has(key)) {
+                        loc.cargoGone.delete(key);
+                        state.map[y][x] = 'O';
+                    }
+                }
             }
         }
     }
@@ -173,10 +296,53 @@ function executeAction() {
 
     // 1. 获取当前格资源
     if(head.c === 'O') {
-        state.resources++; 
-        head.c = '.'; // 更新路径栈记录
-        state.map[state.probe.y][state.probe.x] = '.'; // 更新当前显示
-        log.innerText = "RESOURCE SECURED (+1)";
+        state.movingCargo.push({ pathIndex: state.pathStack.length - 1 });
+        head.c = '.'; // 更新路径栈记录，防止重复拾取
+        log.innerText = "RESOURCE LOADED. TRANSPORTING...";
+        checkCargoCollection(); // 立即检查是否可回收
+        acted = true;
+    }
+
+    // 1.5 升级逻辑 (T)
+    if(!acted && head.c === 'T') {
+        if (state.resources >= 5) {
+            if (!state.upgradeConfirm) {
+                state.upgradeConfirm = true;
+                log.style.color = "#ffff00";
+                log.innerText = "UPGRADE TETHER? (Cost: 5 Cargo, +15 Time). Press EXEC.";
+            } else {
+                state.resources -= 5;
+                state.tetherMax += 1;
+                state.time += 15;
+                state.upgradeConfirm = false;
+                log.style.color = "#55ff55";
+                log.innerText = "TETHER CAPACITY UPGRADED! (+1)";
+            }
+        } else {
+            log.style.color = "#ff5555";
+            log.innerText = "INSUFFICIENT CARGO. (Need 5)";
+        }
+        acted = true;
+    }
+
+    // 1.6 速度升级逻辑 (S)
+    if(!acted && head.c === 'S') {
+        if (state.resources >= 2) {
+            if (!state.speedConfirm) {
+                state.speedConfirm = true;
+                log.style.color = "#ffff00";
+                log.innerText = "UPGRADE SPEED? (Cost: 2 Cargo). Press EXEC.";
+            } else {
+                state.resources -= 2;
+                state.transportSpeed += 1;
+                state.speedConfirm = false;
+                log.style.color = "#55ff55";
+                log.innerText = "TRANSPORT SPEED UPGRADED! (+1)";
+            }
+        } else {
+            log.style.color = "#ff5555";
+            log.innerText = "INSUFFICIENT CARGO. (Need 2)";
+        }
         acted = true;
     }
     
@@ -187,7 +353,9 @@ function executeAction() {
             let tx = state.probe.x + ax, ty = state.probe.y + ay;
             if(state.map[ty] && state.map[ty][tx] === '+') {
                 state.map[ty][tx] = '.'; // 门变地板
-                log.innerText = "DOOR BYPASSED.";
+                const cost = Math.floor(Math.random() * 3) + 3; // 3 to 5
+                state.time += cost;
+                log.innerText = `DOOR BYPASSED. (+${cost} TIME)`;
                 acted = true;
                 break;
             }
@@ -203,6 +371,8 @@ function enterInstance() {
     const res = WorldManager.enterInstance(state.worldPos.x, state.worldPos.y);
     state.mode = 'INSTANCE';
     state.map = res.map;
+    state.currentInstanceKey = res.instanceKey;
+    state.lastDecayCheck = 0;
 
     let startX, startY;
     // 统一处理：优先找地图上的 H，找不到再用 startRoom
@@ -221,8 +391,9 @@ function enterInstance() {
 
     state.probe = { x: startX, y: startY, facing: 'd' };
     state.pathStack = [{x: startX, y: startY, c: 'H'}];
+    state.movingCargo = [];
     state.map[startY][startX] = 'H';
-    
+
     document.getElementById('log').innerText = "PROBE LINK ESTABLISHED.";
 }
 
@@ -231,6 +402,7 @@ function exitInstance() {
     state.mode = 'WORLD';
     state.evacConfirm = false;
     state.saveConfirm = false;
+    state.movingCargo = [];
 }
 
 // --- 渲染 (保持不变) ---
@@ -238,16 +410,58 @@ function render() {
     if (state.mode === 'WORLD') renderWorld(); else renderInstance();
     document.getElementById('val-time').innerText = state.time;
     document.getElementById('val-res').innerText = state.resources;
+    document.getElementById('val-max-len').innerText = state.tetherMax;
 }
 
 function renderWorld() {
     let html = "";
     const worldMap = WorldManager.state.overworld;
+    const px = state.worldPos.x;
+    const py = state.worldPos.y;
+    const viewRadius = 5;
+
     for(let y=0; y<worldMap.length; y++) {
         html += "<div>";
         for(let x=0; x<worldMap[y].length; x++) {
-            let isP = (x === state.worldPos.x && y === state.worldPos.y);
-            html += `<span class="${isP ? 'obj-highlight' : 'dim'}">${isP ? '@' : worldMap[y][x]}</span>`;
+            let isP = (x === px && y === py);
+            let dx = x - px, dy = y - py;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+            let inSight = dist <= viewRadius;
+            let key = `${x},${y}`;
+            let revealed = WorldManager.state.revealedTiles[key];
+
+            let char, className;
+
+            if (isP) {
+                char = '@';
+                className = 'obj-highlight';
+            } else if (inSight) {
+                char = worldMap[y][x];
+                if (char !== '.') {
+                    const loc = WorldManager.state.instances[key];
+                    let isVisited = loc && loc.visited;
+                    if (revealed) {
+                        revealed.visible = true;
+                    } else {
+                        WorldManager.state.revealedTiles[key] = { tile: char, visible: true };
+                    }
+                    WorldManager.state.explored.add(key);
+                    className = isVisited ? 'explored-highlight' : 'lit';
+                } else {
+                    char = '.';
+                    className = 'lit';
+                }
+            } else {
+                if (revealed && revealed.visible) {
+                    char = revealed.tile;
+                    className = 'dim';
+                } else {
+                    char = '.';
+                    className = 'fog';
+                }
+            }
+
+            html += `<span class="${className}">${char}</span>`;
         }
         html += "</div>";
     }
@@ -256,18 +470,55 @@ function renderWorld() {
 
 function renderInstance() {
     let html = "";
-    for(let y=0; y<CONFIG.SIZE; y++) {
+    // 创建一个坐标映射，方便查找该格子上是否有正在移动的资源包
+    const cargoMap = new Set();
+    state.movingCargo.forEach(c => {
+        const pos = state.pathStack[c.pathIndex];
+        if (pos) cargoMap.add(`${pos.x},${pos.y}`);
+    });
+
+    const currentMapSize = state.map.length; // 使用实际地图大小
+    const loc = WorldManager.state.instances[state.currentInstanceKey];
+
+    for(let y=0; y<currentMapSize; y++) {
         html += "<div>";
-        for(let x=0; x<CONFIG.SIZE; x++) {
-            let isP = (x === state.probe.x && y === state.probe.y);
-            let char = isP ? {w:'^',s:'v',a:'<',d:'>'}[state.probe.facing] : state.map[y][x];
-            let isT = (char==='|' || char==='-' || char==='H' || isP);
-            html += `<span class="${isT ? 'obj-highlight' : (isVisible(x,y)?'lit':'dim')}">${char}</span>`;
+        for(let x=0; x<currentMapSize; x++) {
+            const key = `${x},${y}`;
+            const isP = (x === state.probe.x && y === state.probe.y);
+            const isCargo = cargoMap.has(key);
+            const inSight = isVisible(x, y);
+            const hasBeenSeen = loc && loc.revealedPoints && loc.revealedPoints.has(key);
+            
+            let char = state.map[y][x];
+            // 探头位置显示
+            if (isP) char = {w:'^',s:'v',a:'<',d:'>'}[state.probe.facing];
+            // 管道中的资源包显示
+            else if (isCargo) char = 'O';
+
+            // 战争迷雾逻辑
+            let className = 'fog';
+            if (inSight || isP || isCargo) {
+                // 当前视野内、探头位置、管道资源包：高亮
+                className = 'obj-highlight';
+            } else if (hasBeenSeen) {
+                // 曾经看到过的地方：暗色显示，但如果是资源包或门，隐藏它们直到再次被看到
+                className = 'dim';
+                if (char === 'O' || char === '+') char = '.'; 
+            } else {
+                // 完全没看过的地方：显示为空地或迷雾
+                char = ' ';
+                className = 'fog';
+            }
+            
+            // 管道线始终高亮显示
+            if (char === '|' || char === '-' || char === 'H') className = 'obj-highlight';
+
+            html += `<span class="${className}">${char}</span>`;
         }
         html += "</div>";
     }
     document.getElementById('game-screen').innerHTML = html;
-    document.getElementById('val-len').innerText = (CONFIG.MAX_TETHER - state.pathStack.length + 1);
+    document.getElementById('val-len').innerText = (state.tetherMax - state.pathStack.length + 1);
 }
 
 function isVisible(x, y) {
@@ -277,7 +528,40 @@ function isVisible(x, y) {
     let fA = {'w':-90, 's':90, 'a':180, 'd':0}[state.probe.facing];
     let diff = Math.abs(angle - fA);
     if(diff > 180) diff = 360 - diff;
-    return diff <= CONFIG.CONE_ANGLE;
+    if(diff > CONFIG.CONE_ANGLE) return false;
+
+    return hasLineOfSight(state.probe.x, state.probe.y, x, y);
+}
+
+function hasLineOfSight(x0, y0, x1, y1) {
+    let dx = Math.abs(x1 - x0);
+    let dy = Math.abs(y1 - y0);
+    let sx = (x0 < x1) ? 1 : -1;
+    let sy = (y0 < y1) ? 1 : -1;
+    let err = dx - dy;
+
+    let cx = x0;
+    let cy = y0;
+
+    while (true) {
+        if (cx === x1 && cy === y1) break;
+
+        if (cx !== x0 || cy !== y0) {
+            const tile = state.map[cy][cx];
+            if (tile === '#' || tile === '+') return false;
+        }
+
+        let e2 = 2 * err;
+        if (e2 > -dy) {
+            err -= dy;
+            cx += sx;
+        }
+        if (e2 < dx) {
+            err += dx;
+            cy += sy;
+        }
+    }
+    return true;
 }
 
 function moveInWorld(key) {
@@ -287,6 +571,7 @@ function moveInWorld(key) {
     if (nx >= 0 && nx < 50 && ny >= 0 && ny < 50) {
         state.worldPos.x = nx; state.worldPos.y = ny;
         WorldManager.state.playerPos = { x: nx, y: ny };
+        state.time += 5; // 世界上移动消耗 5 分钟
         state.saveConfirm = false;
     }
 }
