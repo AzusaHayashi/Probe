@@ -13,7 +13,18 @@ export const WorldManager = {
     init(seed) {
         this.state.globalSeed = seed;
         this.state.overworld = this.generateOverworld(seed);
-        this.loadFromStorage();
+        if (!this.loadFromStorage()) {
+            this.saveToStorage();
+        }
+    },
+
+    loadFromStorage() {
+        const saved = localStorage.getItem('scavenge_world_data');
+        if (saved) {
+            this.state = JSON.parse(saved);
+            return true;
+        }
+        return false;
     },
 
     // 生成大世界地图 (50x50)
@@ -37,7 +48,9 @@ export const WorldManager = {
             };
         }
         // 初始撤离点
-        world[5][5] = 'E'; 
+        world[5][5] = 'E';
+        let ix = Math.floor(rng() * size), iy = Math.floor(rng() * size);
+        world[iy][ix] = 'I';
         return world;
     },
 
@@ -71,13 +84,6 @@ export const WorldManager = {
     // 持久化到本地缓存
     saveToStorage() {
         localStorage.setItem('scavenge_world_data', JSON.stringify(this.state));
-    },
-
-    loadFromStorage() {
-        const saved = localStorage.getItem('scavenge_world_data');
-        if (saved) {
-            this.state = JSON.parse(saved);
-        }
     },
 
     createRng(seed) {
