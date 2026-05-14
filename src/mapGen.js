@@ -29,6 +29,13 @@ export function generateDungeon(seed) {
                 }
             }
             rooms.push({x, y, w, h, cx: x+Math.floor(w/2), cy: y+Math.floor(h/2)});
+            
+            // 放置资源包 O
+            if (rng() > 0.5) {
+                let ox = x + Math.floor(rng() * w);
+                let oy = y + Math.floor(rng() * h);
+                if (map[oy][ox] === '.') map[oy][ox] = 'O';
+            }
         }
     }
 
