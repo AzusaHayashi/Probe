@@ -1,6 +1,7 @@
 import { CONFIG } from './constants.js';
 import { WorldManager } from './worldManager.js';
 import { setupControls } from './controls.js';
+import { isVisible } from './visibility.js';
 
 let state = {
     mode: 'WORLD',
@@ -280,7 +281,7 @@ function updateInstanceCargoVisibility() {
     // 遍历地图，根据 isVisible 逻辑更新揭示点
     for (let y = 0; y < state.map.length; y++) {
         for (let x = 0; x < state.map[y].length; x++) {
-            if (isVisible(x, y)) {
+            if (isVisible(x, y, state.probe, state.map)) {
                 const key = `${x},${y}`;
                 loc.revealedPoints.add(key);
 
@@ -497,10 +498,12 @@ function renderInstance() {
             const key = `${x},${y}`;
             const isP = (x === state.probe.x && y === state.probe.y);
             const isCargo = cargoMap.has(key);
-            const inSight = isVisible(x, y);
+            const inSight = isVisible(x, y, state.probe, state.map);
             const hasBeenSeen = loc && loc.revealedPoints && loc.revealedPoints.has(key);
             
             let char = state.map[y][x];
+            const isPipeline = (char === '|' || char === '-' || char === 'H');
+
             // 探头位置显示
             if (isP) char = {w:'^',s:'v',a:'<',d:'>'}[state.probe.facing];
             // 管道中的资源包显示
@@ -511,6 +514,9 @@ function renderInstance() {
             if (inSight || isP || isCargo) {
                 // 当前视野内、探头位置、管道资源包：高亮
                 className = 'obj-highlight';
+            } else if (isPipeline) {
+                // 管道线始终高亮显示，不受视野影响
+                className = 'obj-highlight';
             } else if (hasBeenSeen) {
                 // 曾经看到过的地方：暗色显示，但如果是资源包或门，隐藏它们直到再次被看到
                 className = 'dim';
@@ -520,9 +526,6 @@ function renderInstance() {
                 char = ' ';
                 className = 'fog';
             }
-            
-            // 管道线始终高亮显示
-            if (char === '|' || char === '-' || char === 'H') className = 'obj-highlight';
 
             html += `<span class="${className}">${char}</span>`;
         }
@@ -530,49 +533,6 @@ function renderInstance() {
     }
     document.getElementById('game-screen').innerHTML = html;
     document.getElementById('val-len').innerText = (state.tetherMax - state.pathStack.length + 1);
-}
-
-function isVisible(x, y) {
-    let dist = Math.sqrt((x-state.probe.x)**2 + (y-state.probe.y)**2);
-    if(dist > CONFIG.VIEW_DIST) return false;
-    let angle = Math.atan2(y - state.probe.y, x - state.probe.x) * 180 / Math.PI;
-    let fA = {'w':-90, 's':90, 'a':180, 'd':0}[state.probe.facing];
-    let diff = Math.abs(angle - fA);
-    if(diff > 180) diff = 360 - diff;
-    if(diff > CONFIG.CONE_ANGLE) return false;
-
-    return hasLineOfSight(state.probe.x, state.probe.y, x, y);
-}
-
-function hasLineOfSight(x0, y0, x1, y1) {
-    let dx = Math.abs(x1 - x0);
-    let dy = Math.abs(y1 - y0);
-    let sx = (x0 < x1) ? 1 : -1;
-    let sy = (y0 < y1) ? 1 : -1;
-    let err = dx - dy;
-
-    let cx = x0;
-    let cy = y0;
-
-    while (true) {
-        if (cx === x1 && cy === y1) break;
-
-        if (cx !== x0 || cy !== y0) {
-            const tile = state.map[cy][cx];
-            if (tile === '#' || tile === '+') return false;
-        }
-
-        let e2 = 2 * err;
-        if (e2 > -dy) {
-            err -= dy;
-            cx += sx;
-        }
-        if (e2 < dx) {
-            err += dx;
-            cy += sy;
-        }
-    }
-    return true;
 }
 
 function moveInWorld(key) {
