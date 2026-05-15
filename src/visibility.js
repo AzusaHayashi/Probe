@@ -5,19 +5,22 @@ import { CONFIG } from './constants.js';
  */
 export function isVisible(x, y, probe, map) {
     const dist = Math.sqrt((x - probe.x) ** 2 + (y - probe.y) ** 2);
-    if (dist > CONFIG.VIEW_DIST) return false;
+    // 增加 0.1 的距离缓冲区
+    if (dist > CONFIG.VIEW_DIST + 0.1) return false;
 
     const angle = Math.atan2(y - probe.y, x - probe.x) * 180 / Math.PI;
     const fA = { 'w': -90, 's': 90, 'a': 180, 'd': 0 }[probe.facing];
     let diff = Math.abs(angle - fA);
     if (diff > 180) diff = 360 - diff;
-    if (diff > CONFIG.CONE_ANGLE) return false;
+    // 增加 0.5 度的角度缓冲区
+    if (diff > CONFIG.CONE_ANGLE + 0.5) return false;
 
     return hasLineOfSight(probe.x, probe.y, x, y, map);
 }
 
 /**
  * 使用 Bresenham 直线算法判断两点之间是否有遮挡
+ * 优化：允许检测终点处的墙壁
  */
 export function hasLineOfSight(x0, y0, x1, y1, map) {
     const dx = Math.abs(x1 - x0);
@@ -30,14 +33,14 @@ export function hasLineOfSight(x0, y0, x1, y1, map) {
     let cy = y0;
 
     while (true) {
-        if (cx === x1 && cy === y1) break;
-
-        // 起点不检查遮挡
-        if (cx !== x0 || cy !== y0) {
+        // 只有在路径中间的点（非起点且非终点）才检查遮挡
+        // 这允许墙壁本身被视为“可见”的，即使它会遮挡后面的点
+        if ((cx !== x0 || cy !== y0) && (cx !== x1 || cy !== y1)) {
             const tile = map[cy][cx];
-            // 墙壁 (#) 和 门 (+) 遮挡视野
             if (tile === '#' || tile === '+') return false;
         }
+
+        if (cx === x1 && cy === y1) break;
 
         const e2 = 2 * err;
         if (e2 > -dy) {
