@@ -121,9 +121,8 @@ export function renderInstance() {
                 // 管道线始终高亮显示，不受视野影响
                 className = 'obj-highlight';
             } else if (hasBeenSeen) {
-                // 曾经看到过的地方：暗色显示，但如果是资源包或门，隐藏它们直到再次被看到
+                // 曾经看到过的地方：暗色显示
                 className = 'dim';
-                if (char === 'O' || char === '+') char = '.'; 
             } else {
                 // 完全没看过的地方：显示为空地或迷雾
                 char = ' ';
