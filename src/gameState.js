@@ -26,16 +26,18 @@ export const state = {
 export function advanceTime(amount) {
     state.time += amount;
 
-    // 只有在探索模式下，时间增加才会推动资源包移动
-    if (state.mode === 'INSTANCE' && state.movingCargo.length > 0) {
-        // 时间增加 amount，资源包移动 amount * transportSpeed
-        const moveDist = amount * state.transportSpeed;
-        state.movingCargo.forEach(cargo => {
-            cargo.pathIndex -= moveDist;
-        });
-        checkCargoCollection(); // 检查是否到达回收点
+    // 只有在探索模式下，时间增加才会处理相关逻辑
+    if (state.mode === 'INSTANCE') {
+        if (state.movingCargo.length > 0) {
+            // 时间增加 amount，资源包移动 amount * transportSpeed
+            const moveDist = amount * state.transportSpeed;
+            state.movingCargo.forEach(cargo => {
+                cargo.pathIndex -= moveDist;
+            });
+            checkCargoCollection(); // 检查是否到达回收点
+        }
         checkCargoDecay();      // 检查资源包衰减
-        updateInstanceCargoVisibility(); // 更新可见状态
+        updateInstanceCargoVisibility(); // 始终更新可见状态
     }
 }
 

@@ -107,13 +107,14 @@ export function moveInInstance(key) {
                 cargo.pathIndex = state.pathStack.length - 1;
             }
         });
+
+        state.probe.x = last.x; 
+        state.probe.y = last.y;
+
         checkCargoCollection(); // 回退后立即检查回收
         checkCargoDecay(); // 检查资源包衰减
         updateInstanceCargoVisibility(); // 更新资源包可见状态
         render(); // 即时更新管道和资源包位置
-
-        state.probe.x = last.x; 
-        state.probe.y = last.y;
     } 
     // 转向逻辑
     else if(key !== state.probe.facing) {
@@ -128,8 +129,10 @@ export function moveInInstance(key) {
             let target = state.map[ny][nx];
             // 允许经过地板(.)和资源(O)，墙(#)和门(+)不能通过
             if((target === '.' || target === 'O' || target === 'T' || target === 'S') && state.pathStack.length < state.tetherMax) {
-                state.map[state.probe.y][state.probe.x] = (dx !== 0) ? '-' : '|';
-                if(state.pathStack.length === 1) state.map[state.probe.y][state.probe.x] = 'H';
+                // 只有当当前格子不是基站 H 时，才放置管道符号
+                if (state.map[state.probe.y][state.probe.x] !== 'H') {
+                    state.map[state.probe.y][state.probe.x] = (dx !== 0) ? '-' : '|';
+                }
                 
                 state.probe.x = nx; 
                 state.probe.y = ny;
@@ -255,6 +258,7 @@ export function enterInstance() {
     state.pathStack = [{x: startX, y: startY, c: 'H'}];
     state.movingCargo = [];
     state.map[startY][startX] = 'H';
+    updateInstanceCargoVisibility();
 
     const log = document.getElementById('log');
     if (log) log.innerText = "PROBE LINK ESTABLISHED.";
