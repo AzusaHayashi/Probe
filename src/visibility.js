@@ -1,12 +1,15 @@
 import { CONFIG } from './constants.js';
+import { state } from './gameState.js';
 
 /**
  * 判断点 (x, y) 是否在探头的视野内
  */
 export function isVisible(x, y, probe, map) {
     const dist = Math.sqrt((x - probe.x) ** 2 + (y - probe.y) ** 2);
+    // 基础视野 + 升级加成
+    const viewDist = CONFIG.VIEW_DIST + (state.probeVisionBonus || 0);
     // 增加 0.1 的距离缓冲区
-    if (dist > CONFIG.VIEW_DIST + 0.1) return false;
+    if (dist > viewDist + 0.1) return false;
 
     const angle = Math.atan2(y - probe.y, x - probe.x) * 180 / Math.PI;
     const fA = { 'w': -90, 's': 90, 'a': 180, 'd': 0 }[probe.facing];
