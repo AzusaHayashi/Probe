@@ -17,7 +17,19 @@ export const state = {
     tetherMax: 35,
     transportSpeed: 1,
     currentInstanceKey: null,
-    lastDecayCheck: 0
+    lastDecayCheck: 0,
+    worldViewRadius: 10,
+    lastFogMessageTime: 0,
+    menu: {
+        options: [
+            { id: 'upgrade_view', label: 'UPGRADE PROBE VISION (+1)', cost: 20 },
+            { id: 'export_save', label: 'EXPORT DATA TO FILE', cost: 0 },
+            { id: 'continue_current', label: 'CONTINUE EXPLORATION (KEEP WORLD)', cost: 0 },
+            { id: 'continue_exploration', label: 'NEW EXPEDITION (RESET WORLD)', cost: 0 }
+        ],
+        currentIndex: 0,
+        confirming: false
+    }
 };
 
 /**
@@ -25,6 +37,18 @@ export const state = {
  */
 export function advanceTime(amount) {
     state.time += amount;
+
+    // 每 1000 分钟减少 1 格大世界视野
+    const fogSteps = Math.floor(state.time / 1000);
+    const newRadius = Math.max(1, state.worldViewRadius - fogSteps);
+    if (newRadius < state.worldViewRadius) {
+        state.worldViewRadius = newRadius;
+        const log = document.getElementById('log');
+        if (log) {
+            log.style.color = "#ff5555";
+            log.innerText = "Fog grows thicker.";
+        }
+    }
 
     // 只有在探索模式下，时间增加才会处理相关逻辑
     if (state.mode === 'INSTANCE') {
