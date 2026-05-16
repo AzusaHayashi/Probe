@@ -32,7 +32,7 @@ export function handleExec() {
                 log.style.color = "#ffff00";
                 log.innerText = "CONFIRM SAVE? (Press EXEC again to SAVE, or move to cancel)";
             } else {
-                WorldManager.saveToStorage();
+                WorldManager.saveToStorage(state);
                 const key = `${state.worldPos.x},${state.worldPos.y}`;
                 if (WorldManager.state.instances[key]) WorldManager.state.instances[key].visited = true;
                 log.style.color = "#55ff55";
@@ -40,32 +40,13 @@ export function handleExec() {
                 state.saveConfirm = false;
             }
         } else if (tile === 'I') {
-            if (!state.saveConfirm) {
-                state.saveConfirm = true;
-                log.style.color = "#ffff00";
-                log.innerText = "EXPORT: Press EXEC | IMPORT: Use file input below";
-            } else {
-                const saveData = localStorage.getItem('scavenge_world_data');
-                if (saveData) {
-                    const blob = new Blob([saveData], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `probe_save_${Date.now()}.json`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    const key = `${state.worldPos.x},${state.worldPos.y}`;
-                    if (WorldManager.state.instances[key]) WorldManager.state.instances[key].visited = true;
-                    log.style.color = "#55ff55";
-                    log.innerText = "SAVE EXPORTED.";
-                } else {
-                    log.style.color = "#ff5555";
-                    log.innerText = "NO SAVE DATA.";
-                }
-                state.saveConfirm = false;
-            }
+            state.mode = 'MENU';
+            state.menu.currentIndex = 0;
+            state.menu.confirming = false;
+            log.style.color = "#55ff55";
+            log.innerText = "DOCKING COMPLETE. COMMAND CENTER ACTIVE.";
         }
-    } else {
+    } else if (state.mode === 'INSTANCE') {
         // 撤离逻辑：检查是否在底座 'H' 上
         const isAtStart = (state.pathStack.length > 0 && state.probe.x === state.pathStack[0].x && state.probe.y === state.pathStack[0].y);
         if (isAtStart) {
