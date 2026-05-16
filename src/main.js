@@ -3,14 +3,39 @@ import { setupControls } from './controls.js';
 import { state } from './gameState.js';
 import { render } from './renderer.js';
 import { handleMove, handleExec } from './actions.js';
+import { handleMenuInput } from './menuManager.js';
 
 function init() {
-    localStorage.removeItem('scavenge_world_data');
-    const randomSeed = Math.floor(Math.random() * 999999);
-    WorldManager.init(randomSeed);
+    // 优先尝试从本地存储加载
+    const hasSave = WorldManager.loadFromStorage(state);
+
+    if (!hasSave) {
+        // 如果没有存档，则初始化新世界
+        const randomSeed = Math.floor(Math.random() * 999999);
+        WorldManager.init(randomSeed);
+    }
 
     state.worldPos = { ...WorldManager.state.playerPos };
-    setupControls(handleMove, handleExec);
+    
+    // 初始化控制逻辑
+    setupControls(
+        (key) => {
+            if (state.mode === 'MENU') {
+                handleMenuInput(key);
+                render();
+            } else {
+                handleMove(key);
+            }
+        },
+        () => {
+            if (state.mode === 'MENU') {
+                handleMenuInput('exec');
+                render();
+            } else {
+                handleExec();
+            }
+        }
+    );
 
     const importInput = document.getElementById('import-input');
     const importBtn = document.getElementById('btn-import');
@@ -24,7 +49,7 @@ function init() {
             try {
                 const data = JSON.parse(ev.target.result);
                 localStorage.setItem('scavenge_world_data', JSON.stringify(data));
-                WorldManager.loadFromStorage();
+                WorldManager.loadFromStorage(state);
                 state.worldPos = { ...WorldManager.state.playerPos };
                 document.getElementById('log').style.color = "#55ff55";
                 document.getElementById('log').innerText = "SAVE IMPORTED SUCCESSFULLY.";
