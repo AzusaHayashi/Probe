@@ -23,7 +23,7 @@ export const WorldManager = {
         }
     },
 
-    loadFromStorage() {
+    loadFromStorage(gameState = null) {
         const saved = localStorage.getItem('scavenge_world_data');
         if (saved) {
             const parsed = JSON.parse(saved);
@@ -35,6 +35,16 @@ export const WorldManager = {
                 if (loc.cargoSeen) loc.cargoSeen = new Set(loc.cargoSeen);
                 if (loc.cargoGone) loc.cargoGone = new Set(loc.cargoGone);
                 if (loc.revealedPoints) loc.revealedPoints = new Set(loc.revealedPoints);
+            }
+
+            // 如果提供了 gameState，恢复全局状态
+            if (gameState && parsed.globalGameState) {
+                const g = parsed.globalGameState;
+                gameState.time = g.time ?? 0;
+                gameState.resources = g.resources ?? 0;
+                gameState.probeVisionBonus = g.probeVisionBonus ?? 0;
+                gameState.tetherMax = g.tetherMax ?? 35;
+                gameState.transportSpeed = g.transportSpeed ?? 1;
             }
             return true;
         }
@@ -167,7 +177,7 @@ export const WorldManager = {
     },
 
     // 持久化到本地缓存
-    saveToStorage() {
+    saveToStorage(gameState = null) {
         // 序列化 Set
         const instancesCopy = {};
         for (let key in this.state.instances) {
@@ -185,6 +195,18 @@ export const WorldManager = {
             instances: instancesCopy,
             explored: Array.from(this.state.explored)
         };
+
+        // 如果传入了游戏全局状态，则合并保存
+        if (gameState) {
+            toSave.globalGameState = {
+                time: gameState.time,
+                resources: gameState.resources,
+                probeVisionBonus: gameState.probeVisionBonus,
+                tetherMax: gameState.tetherMax,
+                transportSpeed: gameState.transportSpeed
+            };
+        }
+
         localStorage.setItem('scavenge_world_data', JSON.stringify(toSave));
     },
 
