@@ -6,7 +6,9 @@ import { state } from './gameState.js';
  * 核心渲染入口
  */
 export function render() {
-    if (state.mode === 'WORLD') {
+    if (state.mode === 'MENU') {
+        renderMenu();
+    } else if (state.mode === 'WORLD') {
         renderWorld();
     } else {
         renderInstance();
@@ -29,7 +31,7 @@ export function renderWorld() {
     const worldMap = WorldManager.state.overworld;
     const px = state.worldPos.x;
     const py = state.worldPos.y;
-    const viewRadius = 5;
+    const viewRadius = state.worldViewRadius;
 
     for(let y=0; y<worldMap.length; y++) {
         html += "<div>";
@@ -138,4 +140,35 @@ export function renderInstance() {
     
     const valLen = document.getElementById('val-len');
     if (valLen) valLen.innerText = (state.tetherMax - state.pathStack.length + 1);
+}
+
+/**
+ * 渲染菜单界面
+ */
+export function renderMenu() {
+    let html = `<div class="menu-container">`;
+    html += `<h2 style="color: #55ff55; text-align: center;">--- COMMAND CENTER ---</h2>`;
+    html += `<div style="margin-bottom: 20px; text-align: center; color: #aaa;">Current Resources: <span style="color: #fff;">${state.resources}</span></div>`;
+    
+    state.menu.options.forEach((opt, index) => {
+        const isSelected = index === state.menu.currentIndex;
+        const prefix = isSelected ? "> " : "  ";
+        const style = isSelected ? "color: #fff; background: #222;" : "color: #888;";
+        const costText = opt.cost > 0 ? ` (Cost: ${opt.cost} Cargo)` : "";
+        
+        html += `<div style="padding: 10px; margin: 5px 0; cursor: pointer; ${style}">`;
+        html += `${prefix}${opt.label}${costText}`;
+        html += `</div>`;
+    });
+    
+    if (state.menu.confirming) {
+        html += `<div style="margin-top: 30px; text-align: center; color: #ffff00; border: 1px dashed #ffff00; padding: 10px;">`;
+        html += `ARE YOU SURE? (Press EXEC to Confirm)`;
+        html += `</div>`;
+    }
+    
+    html += `</div>`;
+    
+    const screen = document.getElementById('game-screen');
+    if (screen) screen.innerHTML = html;
 }
