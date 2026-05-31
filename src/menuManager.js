@@ -1,4 +1,4 @@
-import { state } from './gameState.js';
+﻿import { state } from './gameState.js';
 import { WorldManager } from './worldManager.js';
 
 /**
@@ -128,6 +128,7 @@ function resetWorld() {
     // 1. 重置核心状态
     state.time = 0;
     state.worldViewRadius = 10;
+    state.lastFogReductionTime = 0;
     state.mode = 'WORLD';
     
     // 2. 重新生成大世界

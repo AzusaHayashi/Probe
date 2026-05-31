@@ -1,6 +1,6 @@
-body { background: #000; color: #003300; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; margin: 0; overflow: hidden; touch-action: none; }
+﻿body { background: #000; color: #003300; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; margin: 0; overflow: hidden; touch-action: none; }
 #stats { width: 100%; max-width: 500px; padding: 10px; font-size: 14px; color: #55ff55; display: flex; justify-content: space-around; border-bottom: 1px solid #003300; }
-#game-screen { line-height: 12px; letter-spacing: 2px; font-size: 12px; white-space: pre; background: #000; padding: 5px; border: 1px solid #222; margin: 5px; cursor: default; }
+#game-screen { line-height: 13px; letter-spacing: 1px; font-size: 13px; white-space: pre; background: #000; padding: 6px; border: 1px solid #222; margin: 5px; cursor: default; overflow: auto; max-width: 100%; max-height: 70vh; box-sizing: border-box; }
 
 .lit { color: #55ff55; text-shadow: 0 0 5px #55ff55; }
 .dim { color: #00aa00; }
@@ -14,14 +14,3 @@ body { background: #000; color: #003300; font-family: 'Courier New', monospace; 
 .action-btn { height: 135px; width: 80px; }
 .btn:active { background: #55ff55; color: #000; }
 #log { color: #ffff55; height: 20px; font-size: 12px; margin-top: 5px; }
-
-#game-container {
-    font-family: 'Courier New', monospace;
-    background: #000;
-    color: #0f0; /* 经典的荧光绿 */
-    text-shadow: 0 0 5px #0f0;
-    /* 模拟老式显示器的扫描线效果 */
-    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
-                linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-    background-size: 100% 2px, 3px 100%;
-}

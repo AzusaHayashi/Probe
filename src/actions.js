@@ -1,4 +1,4 @@
-import { WorldManager } from './worldManager.js';
+﻿import { WorldManager } from './worldManager.js';
 import { state, advanceTime, checkCargoCollection, checkCargoDecay, updateInstanceCargoVisibility } from './gameState.js';
 import { render } from './renderer.js';
 
@@ -220,6 +220,7 @@ export function enterInstance() {
     state.currentInstanceKey = res.instanceKey;
     state.lastDecayCheck = 0;
 
+
     let startX, startY;
     // 统一处理：优先找地图上的 H，找不到再用 startRoom
     let foundH = false;
@@ -238,6 +239,7 @@ export function enterInstance() {
     state.probe = { x: startX, y: startY, facing: 'd' };
     state.pathStack = [{x: startX, y: startY, c: 'H'}];
     state.movingCargo = [];
+
     state.map[startY][startX] = 'H';
     updateInstanceCargoVisibility();
 
@@ -254,6 +256,7 @@ export function exitInstance() {
     state.evacConfirm = false;
     state.saveConfirm = false;
     state.movingCargo = [];
+
 }
 
 /**
