@@ -4,6 +4,15 @@ import { state } from './gameState.js';
 import { CONFIG, SITE_INFO } from './constants.js';
 import { rules, meta, lvl, UNLOCKS, PAINTS, PERKS, CURSES, unlockCost, ownsPaint, currentPaint, findMod } from './meta.js';
 import { optionCost } from './menuManager.js';
+import { isSoundEnabled } from './audio.js';
+
+// Keep the player centered within the map, not by scrolling the whole page.
+function centerPlayer(screen) {
+    const player = screen.querySelector?.('.player');
+    if (!player) return;
+    screen.scrollLeft = player.offsetLeft - (screen.clientWidth - player.offsetWidth) / 2;
+    screen.scrollTop = player.offsetTop - (screen.clientHeight - player.offsetHeight) / 2;
+}
 
 /**
  * 核心渲染入口
@@ -28,13 +37,34 @@ export function render() {
     const signal = document.getElementById('val-signal');
     if (signal) signal.style.color = (rules.deadline() - state.time) < 2000 ? '#ff5555' : '';
 
+    renderSquadStatus();
     renderLegend();
     renderOverlay();
 }
 
+function renderSquadStatus() {
+    const drones = Array.isArray(state.drones) ? state.drones : [];
+    const active = drones.find(drone => drone.id === state.activeDrone);
+    const aliveCount = drones.filter(drone => drone.alive).length;
+    const label = drone => drone.name && drone.name !== drone.id
+        ? `${drone.name} [${drone.id}]` : (drone.name || drone.id);
+    const activeText = active
+        ? `${label(active)} (${active.alive ? 'ONLINE' : 'LOST'})`
+        : (state.activeDrone == null ? 'NONE' : `${state.activeDrone} (UNAVAILABLE)`);
+    const statusText = `DRONES: ${aliveCount}/${drones.length} ALIVE | ACTIVE: ${activeText}`;
+    const rosterText = drones.map(drone =>
+        `${drone.id === state.activeDrone ? '> ' : ''}${label(drone)}: ${drone.alive ? 'ONLINE' : 'LOST'}`
+    ).join(' | ');
+    const status = document.getElementById('drone-status');
+    const roster = document.getElementById('drone-roster');
+    // Do not re-announce unchanged status on every render.
+    if (status && status.textContent !== statusText) status.textContent = statusText;
+    if (roster && roster.textContent !== rosterText) roster.textContent = rosterText;
+}
+
 const LEGENDS = {
     WORLD: '@ you · F factory · S supermarket · M mine · W workshop · E evac/save · I command center',
-    INSTANCE: '^>v< probe · O cargo · + door (EXEC next to it) · H base · walk back along the tether to retract',
+    INSTANCE: '^>v< probe · O cargo · H base · + door · A known airlock · X visible creature · ? last scan contact\nEXEC toggles nearby doors to block pursuers · P SCAN within 10 Manhattan tiles · V VENT nearest airlock within 6 Manhattan tiles\nVENT expels creatures in its 3×3 area and destroys your drone there too · M SOUND · retract by walking back along the tether',
     MENU: '↑↓ choose · EXEC select'
 };
 
@@ -44,7 +74,7 @@ function renderLegend() {
     let text = LEGENDS[state.mode] || '';
     if (state.mode === 'INSTANCE') {
         const loc = WorldManager.state.instances[state.currentInstanceKey];
-        if (loc && loc.type === 'W') text = 'T tether +1 (5 cargo) · S speed +1 (2 cargo) · stand on it, EXEC · H exit';
+        if (loc && loc.type === 'W') text += '\nWORKSHOP: T tether +1 (5 cargo) · S speed +1 (2 cargo) · stand on it, EXEC · H exit';
     }
     el.innerText = text;
 }
@@ -124,11 +154,14 @@ export function renderOverlay() {
 <li>Overworld: walk onto <b>F</b>/<b>S</b>/<b>M</b> and press EXEC to send the probe in. Each step costs time. Vision shrinks as time passes.</li>
 <li>Probe: the first press turns it, the next moves. It only sees in a cone. Walking back over the tether retracts it.</li>
 <li>Stand on <b>O</b> and press EXEC: cargo rides the tether home. Seen cargo can rot away, so grab it fast.</li>
-<li>EXEC beside a <b>+</b> door to hack it. Return to <b>H</b> and press EXEC twice to evacuate.</li>
+<li>EXEC toggles a nearby <b>+</b> door open or closed; closed doors block pursuers. To seal a door behind you, face back toward it first. Return to <b>H</b> and press EXEC twice to evacuate.</li>
+<li>Press <b>P</b> to SCAN for creatures within <b>10 Manhattan tiles</b>. Red <b>X</b> is a creature in sight; amber <b>?</b> is a last-known scan contact, not necessarily its current position.</li>
+<li>Press <b>V</b> to VENT the nearest airlock within <b>6 Manhattan tiles</b>. It expels creatures in the airlock's <b>3×3</b> area, but <b>also destroys your drone if it is in that area</b>. Known airlocks are <b>A</b>.</li>
+<li>Your squad has <b>3 drones</b>. A lost drone is permanently lost for the run; a new expedition resets the squad. Losing all three ends the run.</li>
 <li><b>W</b> workshop: longer tether, faster transport. <b>I</b>: the beacon, vision upgrade, export save.</li>
 <li><b>Roguelite:</b> every run, won or lost, earns <b>DATA</b>. Spend it in the <b>HANGAR</b> on permanent upgrades and paint. Each run deals a random perk and curse. Every win makes the next beacon cost more.</li>
 </ul>
-<p class="dim-line">Keys: WASD / arrows, Space / Enter = EXEC. On phone use the pad.</p>
+<p class="dim-line">Keys: WASD / arrows = move; Space / Enter = EXEC; P = SCAN; V = VENT; M = SOUND. On phone use the buttons.</p>
 ${bestLine}
 <p class="blink">PRESS EXEC TO ${state.overlay === 'HELP' ? 'RESUME' : (state.runActive ? 'CONTINUE RUN' : 'ENTER HANGAR')}</p>`;
     } else if (state.overlay === 'HANGAR') {
@@ -150,13 +183,15 @@ ${state.newRecord ? '<p class="win">NEW BEST RUN!</p>' : bestLine}
 <p class="blink">PRESS EXEC FOR THE HANGAR</p>`;
     } else if (state.overlay === 'LOSE') {
         html = `
-<h2 class="lose">SIGNAL LOST</h2>
-<p>The fog closed in at ${rules.deadline()} min. The rig goes dark.</p>
+<h2 class="lose">${state.lossReason === 'squad' ? 'SQUAD LOST' : 'SIGNAL LOST'}</h2>
+<p>${state.lossReason === 'squad' ? 'The final drone was destroyed. No probes remain for this expedition.' : `The fog closed in at ${rules.deadline()} min. The rig goes dark.`}</p>
 <p>Cargo hauled: <b>${state.totalCollected}</b> · In the hold: <b>${state.resources}</b>/${rules.uplinkCost()} · Sites cleared: <b>${state.sitesLooted}</b></p>
 ${dataLine}
 <p class="blink">PRESS EXEC FOR THE HANGAR</p>`;
     }
-    el.innerHTML = '<div class="overlay-box">' + html + '</div>';
+    const soundEnabled = isSoundEnabled();
+    const soundLabel = soundEnabled ? 'Sound enabled, M to mute' : 'Sound muted, M to enable';
+    el.innerHTML = `<div class="overlay-box"><button type="button" class="tool overlay-sound" id="overlay-sound" aria-keyshortcuts="M" aria-pressed="${soundEnabled}" aria-label="${soundLabel}">SOUND ${soundEnabled ? 'ON' : 'OFF'}</button>` + html + '</div>';
     const sel = el.querySelector('.h-item.sel');
     if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: 'nearest' });
 }
@@ -192,7 +227,7 @@ export function renderWorld() {
 
             if (isP) {
                 char = "@";
-                className = "me";
+                className = "me player";
             } else if (inSight) {
                 char = worldMap[y][x];
                 if (char !== ".") {
@@ -224,7 +259,10 @@ export function renderWorld() {
         html += "</div>";
     }
     const screen = document.getElementById("game-screen");
-    if (screen) screen.innerHTML = html;
+    if (screen) {
+        screen.innerHTML = html;
+        centerPlayer(screen);
+    }
 }
 
 /**
@@ -237,6 +275,13 @@ export function renderInstance() {
         const pos = state.pathStack[Math.floor(c.pathIndex)];
         if (pos) cargoMap.add(pos.x + "," + pos.y);
     });
+    const knownPath = new Set(state.pathStack.map(pos => pos.x + ',' + pos.y));
+    const creatures = new Set((state.creatures || []).map(c => c.x + ',' + c.y));
+    // Expiry is expressed in the same in-game time units as state.time.
+    const pings = new Set((state.scanPings || [])
+        .filter(ping => ping.expiresAt > state.time)
+        .map(ping => ping.x + ',' + ping.y));
+    const airlocks = new Set((state.airlocks || []).map(a => a.x + ',' + a.y));
 
     const currentMapSize = state.map.length;
     const loc = WorldManager.state.instances[state.currentInstanceKey];
@@ -249,7 +294,7 @@ export function renderInstance() {
     const yStart = Math.max(0, py - vpSize);
     const yEnd = Math.min(currentMapSize, py + vpSize + 1);
     const xStart = Math.max(0, px - vpSize);
-    const xEnd = Math.min(currentMapSize, px + vpSize + 1);
+    const xEnd = Math.min(state.map[py]?.length || currentMapSize, px + vpSize + 1);
 
     for(let y = yStart; y < yEnd; y++) {
         html += "<div>";
@@ -263,19 +308,8 @@ export function renderInstance() {
             let char = state.map[y][x];
             const isPipeline = (char === "|" || char === "-" || char === "H");
 
-            if (isP) {
-                var dirs = {w:"^",s:"v",a:"<",d:">"};
-                char = dirs[state.probe.facing];
-            } else if (isCargo) {
-                char = "O";
-            }
-
             let className = "fog";
-            if (isP) {
-                className = "me";
-            } else if (inSight || isCargo) {
-                className = "obj-highlight";
-            } else if (isPipeline) {
+            if (inSight || isCargo || (isPipeline && knownPath.has(key))) {
                 className = "obj-highlight";
             } else if (hasBeenSeen) {
                 className = "dim";
@@ -284,12 +318,37 @@ export function renderInstance() {
                 className = "fog";
             }
 
+            if (isP) {
+                const dirs = {w:"^",s:"v",a:"<",d:">"};
+                char = dirs[state.probe.facing] || '@';
+                className = "me player";
+            } else if (inSight && creatures.has(key)) {
+                // An X always means the creature is actually visible now.
+                char = "X";
+                className = "creature";
+            } else if (pings.has(key)) {
+                // Pings deliberately mask terrain, even in unexplored tiles.
+                char = "?";
+                className = "scan-ping";
+            } else if ((inSight || hasBeenSeen) && state.map[y][x] === '+') {
+                char = '+';
+            } else if ((inSight || hasBeenSeen) && airlocks.has(key)) {
+                char = 'A';
+            } else if (isCargo) {
+                char = "O";
+            }
+
+            // Facing arrows and terrain may be HTML metacharacters.
+            char = String(char).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             html += '<span class="' + className + '">' + char + "</span>";
         }
         html += "</div>";
     }
     const screen = document.getElementById("game-screen");
-    if (screen) screen.innerHTML = html;
+    if (screen) {
+        screen.innerHTML = html;
+        centerPlayer(screen);
+    }
     
     const valLen = document.getElementById("val-len");
     if (valLen) valLen.innerText = (state.tetherMax - state.pathStack.length + 1) + "";

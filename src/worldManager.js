@@ -2,6 +2,10 @@ import { generateDungeon } from './mapGen.js';
 import { CONFIG } from './constants.js';
 import { rules } from './meta.js';
 
+// Kept local to avoid importing gameState.js into its own dependency graph.
+// This is the same legacy-save default as createDroneSquad() in gameState.js.
+const freshSquad = () => ['D1', 'D2', 'D3'].map(id => ({ id, name: id, alive: true }));
+
 export const WorldManager = {
     state: {
         globalSeed: 888,
@@ -36,12 +40,14 @@ export const WorldManager = {
             }
 
             // 如果提供了 gameState，恢复全局状态
-            if (gameState && parsed.globalGameState) {
-                const g = parsed.globalGameState;
+            if (gameState) {
+                // Early saves contained only the world. Preserve that world and
+                // initialize missing run fields instead of treating it as a new run.
+                const g = parsed.globalGameState || {};
                 gameState.time = g.time ?? 0;
                 gameState.resources = g.resources ?? 0;
                 gameState.probeVisionBonus = g.probeVisionBonus ?? 0;
-                gameState.tetherMax = g.tetherMax ?? 35;
+                gameState.tetherMax = g.tetherMax ?? CONFIG.MAX_TETHER;
                 gameState.transportSpeed = g.transportSpeed ?? 1;
                 gameState.worldViewRadius = g.worldViewRadius ?? CONFIG.START_VIEW_RADIUS;
                 gameState.lastFogReductionTime = g.lastFogReductionTime ?? 0;
@@ -49,6 +55,20 @@ export const WorldManager = {
                 gameState.sitesLooted = g.sitesLooted ?? 0;
                 gameState.run = g.run ?? { perk: null, curse: null, depth: 0, rewarded: false };
                 gameState.runActive = true;
+            }
+            if (gameState) {
+                const g = parsed.globalGameState;
+                // Missing roster means an old save. An explicitly empty or dead
+                // roster is not a legacy save and must never resurrect drones.
+                gameState.drones = Array.isArray(g?.drones)
+                    ? g.drones.filter(drone => drone && typeof drone.id === 'string')
+                        .map(drone => ({ ...drone, alive: drone.alive === true }))
+                    : freshSquad();
+                const active = gameState.drones.find(drone => drone.id === g?.activeDrone && drone.alive)
+                    || gameState.drones.find(drone => drone.alive);
+                gameState.activeDrone = active?.id ?? null;
+                gameState.lossReason = active ? null : 'squad';
+                if (!active) gameState.runActive = false;
             }
             return true;
         }
@@ -191,7 +211,9 @@ export const WorldManager = {
                 lastFogReductionTime: gameState.lastFogReductionTime,
                 totalCollected: gameState.totalCollected,
                 sitesLooted: gameState.sitesLooted,
-                run: gameState.run
+                run: gameState.run,
+                drones: gameState.drones,
+                activeDrone: gameState.activeDrone
             };
         }
 

@@ -1,4 +1,4 @@
-import { state } from './gameState.js';
+import { state, createDroneSquad } from './gameState.js';
 import { WorldManager } from './worldManager.js';
 import { CONFIG } from './constants.js';
 import { rules, rewardRun, rollRun } from './meta.js';
@@ -165,6 +165,13 @@ export function startNewExpedition() {
     state.lastFogReductionTime = 0;
     state.movingCargo = [];
     state.currentInstanceKey = null;
+    state.drones = createDroneSquad();
+    state.activeDrone = 'D1';
+    state.creatures = [];
+    state.airlocks = [];
+    state.scanPings = [];
+    state.threatClock = 0;
+    state.lossReason = null;
     state.mode = 'WORLD';
     state.menu.currentIndex = 0;
     state.menu.confirming = false;

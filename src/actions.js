@@ -1,29 +1,30 @@
-import { WorldManager } from './worldManager.js';
-import { state, advanceTime, checkCargoCollection, checkCargoDecay, updateInstanceCargoVisibility } from './gameState.js';
+﻿import { WorldManager } from './worldManager.js';
+import { state, advanceTime, checkCargoCollection, updateInstanceCargoVisibility, loseActiveDrone } from './gameState.js';
+import { generateDungeon } from './mapGen.js';
+import { initializeThreats, scanForMotion, ventAirlock } from './threats.js';
+import { playSound } from './audio.js';
 import { render } from './renderer.js';
 import { CONFIG, SITE_INFO } from './constants.js';
 import { rules } from './meta.js';
 
-/**
- * 处理移动指令
- */
+const moves = { w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0] };
+
+function message(text, color = '#55ff55') {
+    const log = document.getElementById('log');
+    if (log) { log.style.color = color; log.innerText = text; }
+}
+
 export function handleMove(key) {
-    if (state.mode === 'WORLD') {
-        moveInWorld(key);
-    } else {
+    if (state.mode === 'WORLD') moveInWorld(key);
+    else if (state.mode === 'INSTANCE') {
         moveInInstance(key);
-        state.evacConfirm = false; 
+        state.evacConfirm = false;
     }
     render();
 }
 
-/**
- * 处理执行指令 (EXEC)
- */
 export function handleExec() {
-    const log = document.getElementById('log');
-    if (!log) return;
-
+    playSound('select');
     if (state.mode === 'WORLD') {
         const tile = WorldManager.state.overworld[state.worldPos.y][state.worldPos.x];
         if (['F', 'S', 'M', 'W'].includes(tile)) {
@@ -31,250 +32,269 @@ export function handleExec() {
         } else if (tile === 'E') {
             if (!state.saveConfirm) {
                 state.saveConfirm = true;
-                log.style.color = "#ffff00";
-                log.innerText = "CONFIRM SAVE? (Press EXEC again to SAVE, or move to cancel)";
+                message('CONFIRM SAVE? (Press EXEC again, or move to cancel)', '#ffff55');
             } else {
                 const key = `${state.worldPos.x},${state.worldPos.y}`;
                 if (WorldManager.state.instances[key]) WorldManager.state.instances[key].visited = true;
                 WorldManager.saveToStorage(state);
-                log.style.color = "#55ff55";
-                log.innerText = "DATABASE SAVED TO LOCAL STORAGE.";
                 state.saveConfirm = false;
+                message('DATABASE SAVED TO LOCAL STORAGE.');
             }
         } else if (tile === 'I') {
             state.mode = 'MENU';
             state.menu.currentIndex = 0;
             state.menu.confirming = false;
-            log.style.color = "#55ff55";
-            log.innerText = "DOCKING COMPLETE. COMMAND CENTER ACTIVE.";
+            message('DOCKING COMPLETE. COMMAND CENTER ACTIVE.');
         } else {
-            log.style.color = "#55ff55";
-            log.innerText = "NOTHING HERE. FIND A SITE (F/S/M/W), E OR I.";
+            message('NOTHING HERE. FIND A SITE (F/S/M/W), E OR I.');
         }
     } else if (state.mode === 'INSTANCE') {
-        // 撤离逻辑：检查是否在底座 'H' 上
-        const isAtStart = (state.pathStack.length > 0 && state.probe.x === state.pathStack[0].x && state.probe.y === state.pathStack[0].y);
-        if (isAtStart) {
+        const home = state.pathStack[0];
+        const isAtStart = home && state.probe.x === home.x && state.probe.y === home.y;
+        // A facing door can still be operated from the base.
+        if (isAtStart && !findDoor(true)) {
             if (!state.evacConfirm) {
                 state.evacConfirm = true;
-                log.style.color = "#ffff00";
-                log.innerText = state.movingCargo.length > 0
-                    ? "CARGO IN TRANSIT. EXEC = WAIT FOR IT & EVACUATE."
-                    : "CONFIRM EVACUATION? (Press EXEC)";
+                message(state.movingCargo.length ? 'CARGO IN TRANSIT. EXEC = WAIT FOR IT & EVACUATE.' : 'CONFIRM EVACUATION? (Press EXEC)', '#ffff55');
             } else {
-                // 等待运输中的货物到达再撤离
                 let waited = 0;
-                if (state.movingCargo.length > 0) {
-                    const far = Math.max(...state.movingCargo.map(c => c.pathIndex));
-                    waited = Math.ceil(far / state.transportSpeed);
-                    if (waited > 0) advanceTime(waited);
+                if (state.movingCargo.length) {
+                    waited = Math.ceil(Math.max(...state.movingCargo.map(c => c.pathIndex)) / state.transportSpeed);
+                    if (waited > 0 && advanceTime(waited)) { render(); return; }
                     state.movingCargo.forEach(c => { c.pathIndex = 0; });
                     checkCargoCollection();
                 }
                 if (state.overlay) { render(); return; }
                 exitInstance();
-                log.style.color = "#55ff55";
-                log.innerText = waited > 0
-                    ? `EVACUATED. WAITED ${waited} MIN FOR CARGO. AUTO-SAVED.`
-                    : "EVACUATED. AUTO-SAVED.";
+                message(waited ? `EVACUATED. WAITED ${waited} MIN FOR CARGO. AUTO-SAVED.` : 'EVACUATED. AUTO-SAVED.');
             }
         } else {
-            executeAction(); 
+            executeAction();
         }
     }
     render();
 }
 
-/**
- * 在地牢实例内移动
- */
+function terrainAt(point) {
+    const loc = WorldManager.state.instances[state.currentInstanceKey];
+    const key = `${point.x},${point.y}`;
+    if (loc?.doors && Object.hasOwn(loc.doors, key)) return loc.doors[key] ? '.' : '+';
+    return point.c;
+}
+
 export function moveInInstance(key) {
-    const moves = {'w':[0,-1],'s':[0,1],'a':[-1,0],'d':[1,0]};
     if (!moves[key]) return;
-    let [dx, dy] = moves[key];
-    
-    let last = state.pathStack.length > 1 ? state.pathStack[state.pathStack.length - 2] : null;
-
-    // 回退逻辑
-    if(last && (state.probe.x + dx === last.x && state.probe.y + dy === last.y)) {
-        let removedIndex = state.pathStack.length - 1;
-        let curr = state.pathStack.pop();
-        if (state.map[curr.y][curr.x] !== 'H') {
-            state.map[curr.y][curr.x] = curr.c; 
+    const [dx, dy] = moves[key];
+    const last = state.pathStack.length > 1 ? state.pathStack[state.pathStack.length - 2] : null;
+    if (last && state.probe.x + dx === last.x && state.probe.y + dy === last.y) {
+        // A sealed door blocks the return trip as well as pursuing creatures.
+        if (state.map[last.y]?.[last.x] === '+') {
+            playSound('blocked');
+            const turned = state.probe.facing !== key;
+            state.probe.facing = key;
+            updateInstanceCargoVisibility();
+            if (!turned || !advanceTime(1)) message('DOOR SEALED. PRESS EXEC TO OPEN.', '#ffff55');
+            return;
         }
-
-        // 资源包随探头回退
+        const loc = WorldManager.state.instances[state.currentInstanceKey];
+        const lastKey = `${last.x},${last.y}`;
+        if (state.probe.facing !== key && loc?.doors && Object.hasOwn(loc.doors, lastKey)) {
+            // Facing the rear door first allows EXEC to seal it before retracting.
+            state.probe.facing = key;
+            updateInstanceCargoVisibility();
+            playSound('turn');
+            if (!advanceTime(1)) message('BULKHEAD IN SIGHT. EXEC TO SEAL OR MOVE TO RETRACT.');
+            return;
+        }
+        const removedIndex = state.pathStack.length - 1;
+        const curr = state.pathStack.pop();
+        if (state.map[curr.y][curr.x] !== 'H') state.map[curr.y][curr.x] = terrainAt(curr);
         state.movingCargo.forEach(cargo => {
-            if (cargo.pathIndex === removedIndex) {
-                cargo.pathIndex = state.pathStack.length - 1;
-            }
+            if (cargo.pathIndex === removedIndex) cargo.pathIndex = state.pathStack.length - 1;
         });
-
-        state.probe.x = last.x; 
+        state.probe.x = last.x;
         state.probe.y = last.y;
-
-        checkCargoCollection(); // 回退后立即检查回收
-        checkCargoDecay(); // 检查资源包衰减
-        updateInstanceCargoVisibility(); // 更新资源包可见状态
-        render(); // 即时更新管道和资源包位置
-    } 
-    // 转向逻辑
-    else if(key !== state.probe.facing) {
         state.probe.facing = key;
-        updateInstanceCargoVisibility(); // 转向也会改变视野
-        render();
-    } 
-    // 前进逻辑
-    else {
-        let nx = state.probe.x + dx, ny = state.probe.y + dy;
-        if(ny >= 0 && ny < state.map.length && nx >= 0 && nx < state.map[ny].length) {
-            let target = state.map[ny][nx];
-            // 允许经过地板(.)和资源(O)，墙(#)和门(+)不能通过
-            if((target === '.' || target === 'O' || target === 'T' || target === 'S') && state.pathStack.length < state.tetherMax) {
-                // 只有当当前格子不是基站 H 时，才放置管道符号
-                if (state.map[state.probe.y][state.probe.x] !== 'H') {
-                    state.map[state.probe.y][state.probe.x] = (dx !== 0) ? '-' : '|';
+        checkCargoCollection();
+        updateInstanceCargoVisibility();
+        playSound('move');
+        advanceTime(1);
+    } else if (key !== state.probe.facing) {
+        state.probe.facing = key;
+        updateInstanceCargoVisibility();
+        playSound('turn');
+        advanceTime(1);
+    } else {
+        const nx = state.probe.x + dx, ny = state.probe.y + dy;
+        const target = state.map[ny]?.[nx];
+        if (['.', 'O', 'T', 'S', 'A'].includes(target) && state.pathStack.length < state.tetherMax) {
+            if (state.map[state.probe.y][state.probe.x] !== 'H') {
+                state.map[state.probe.y][state.probe.x] = dx !== 0 ? '-' : '|';
+            }
+            state.probe.x = nx;
+            state.probe.y = ny;
+            state.pathStack.push({ x: nx, y: ny, c: target });
+            state.upgradeConfirm = false;
+            state.speedConfirm = false;
+            playSound('move');
+            advanceTime(1);
+        } else {
+            playSound('blocked');
+            message(target === '+' ? 'DOOR SEALED. PRESS EXEC TO OPEN.' : 'PATH BLOCKED OR TETHER AT LIMIT.', '#ffff55');
+        }
+    }
+}
+
+// Restore the positions of doors opened by older versions of the game, when possible.
+function prepareDoors(loc) {
+    if (!loc.doors) {
+        loc.doors = {};
+        const source = loc.type !== 'W' && loc.seed != null
+            ? generateDungeon(loc.seed, loc.type, rules.cargoBonus()).map : state.map;
+        for (let y = 0; y < source.length; y++) {
+            for (let x = 0; x < source[y].length; x++) {
+                if (source[y][x] === '+' && state.map[y]?.[x] && state.map[y][x] !== '#') {
+                    loc.doors[`${x},${y}`] = state.map[y][x] !== '+';
                 }
-                
-                state.probe.x = nx; 
-                state.probe.y = ny;
-                state.pathStack.push({x: nx, y: ny, c: target});
-                advanceTime(1);
-                state.upgradeConfirm = false; // 移动时重置确认状态
-                state.speedConfirm = false;
-                render(); // 即时更新管道和资源包位置
             }
         }
     }
 }
 
-/**
- * 执行地牢内交互动作
- */
+function findDoor(facingOnly = false) {
+    const loc = WorldManager.state.instances[state.currentInstanceKey];
+    if (!loc?.doors) return null;
+    const forward = moves[state.probe.facing];
+    const adjacent = facingOnly ? [forward] : [forward, ...Object.values(moves)];
+    for (const [dx, dy] of adjacent) {
+        const x = state.probe.x + dx, y = state.probe.y + dy;
+        const key = `${x},${y}`;
+        if (Object.hasOwn(loc.doors, key)) return { x, y, key, loc };
+    }
+    return null;
+}
+
+function toggleDoor(door) {
+    const { x, y, key, loc } = door;
+    const open = loc.doors[key];
+    if (open && state.creatures.some(creature => creature.x === x && creature.y === y)) {
+        playSound('blocked');
+        message('DOOR OBSTRUCTED BY A CREATURE.', '#ff5555');
+        return;
+    }
+    loc.doors[key] = !open;
+    if (open) {
+        // The tether passes through a sealed bulkhead; the drone cannot pass until reopened.
+        state.map[y][x] = '+';
+    } else {
+        const index = state.pathStack.findIndex(point => point.x === x && point.y === y);
+        if (index > 0 && index < state.pathStack.length - 1) {
+            const previous = state.pathStack[index - 1];
+            state.map[y][x] = previous.y === y ? '-' : '|';
+        } else state.map[y][x] = '.';
+    }
+    playSound(open ? 'door-close' : 'door-open');
+    const cost = open ? 1 : rules.doorCost(Math.random);
+    if (!advanceTime(cost)) message(open ? 'BULKHEAD SEALED. (+1 TIME)' : `BULKHEAD OPEN. (+${cost} TIME)`);
+}
+
 export function executeAction() {
-    let acted = false;
-    const log = document.getElementById('log');
-    if (!log) return;
-    
-    let head = state.pathStack[state.pathStack.length - 1];
-
-    // 1. 获取当前格资源
-    if(head.c === 'O') {
+    const head = state.pathStack[state.pathStack.length - 1];
+    if (!head) return;
+    if (head.c === 'O') {
         state.movingCargo.push({ pathIndex: state.pathStack.length - 1 });
-        head.c = '.'; // 更新路径栈记录，防止重复拾取
-        log.innerText = "RESOURCE LOADED. TRANSPORTING...";
-        checkCargoCollection(); // 立即检查是否可回收
-        acted = true;
+        head.c = '.';
+        checkCargoCollection();
+        playSound('cargo');
+        if (!advanceTime(1)) message('RESOURCE LOADED. TRANSPORTING...');
+        return;
     }
-
-    // 1.5 升级逻辑 (T)
-    if(!acted && head.c === 'T') {
-        if (state.resources >= 5) {
-            if (!state.upgradeConfirm) {
-                state.upgradeConfirm = true;
-                log.style.color = "#ffff00";
-                log.innerText = "UPGRADE TETHER? (Cost: 5 Cargo, +15 Time). Press EXEC.";
-            } else {
-                state.resources -= 5;
-                state.tetherMax += 1;
-                advanceTime(15);
-                state.upgradeConfirm = false;
-                log.style.color = "#55ff55";
-                log.innerText = "TETHER CAPACITY UPGRADED! (+1)";
-            }
+    if (head.c === 'T' || head.c === 'S') {
+        const tether = head.c === 'T';
+        const cost = tether ? 5 : 2;
+        const flag = tether ? 'upgradeConfirm' : 'speedConfirm';
+        if (state.resources < cost) {
+            message(`INSUFFICIENT CARGO. (Need ${cost})`, '#ff5555');
+        } else if (!state[flag]) {
+            state[flag] = true;
+            message(tether ? 'UPGRADE TETHER? (5 CARGO, +15 TIME). PRESS EXEC.' : 'UPGRADE SPEED? (2 CARGO). PRESS EXEC.', '#ffff55');
         } else {
-            log.style.color = "#ff5555";
-            log.innerText = "INSUFFICIENT CARGO. (Need 5)";
+            state.resources -= cost;
+            if (tether) state.tetherMax += 1;
+            else state.transportSpeed += 1;
+            state[flag] = false;
+            if (!advanceTime(tether ? 15 : 1)) message(tether ? 'TETHER CAPACITY UPGRADED! (+1)' : 'TRANSPORT SPEED UPGRADED! (+1)');
         }
-        acted = true;
+        return;
     }
-
-    // 1.6 速度升级逻辑 (S)
-    if(!acted && head.c === 'S') {
-        if (state.resources >= 2) {
-            if (!state.speedConfirm) {
-                state.speedConfirm = true;
-                log.style.color = "#ffff00";
-                log.innerText = "UPGRADE SPEED? (Cost: 2 Cargo). Press EXEC.";
-            } else {
-                state.resources -= 2;
-                state.transportSpeed += 1;
-                state.speedConfirm = false;
-                log.style.color = "#55ff55";
-                log.innerText = "TRANSPORT SPEED UPGRADED! (+1)";
-            }
-        } else {
-            log.style.color = "#ff5555";
-            log.innerText = "INSUFFICIENT CARGO. (Need 2)";
-        }
-        acted = true;
-    }
-    
-    // 2. 尝试破解相邻的门 (+)
-    if(!acted) {
-        const adj = [[0,1],[0,-1],[1,0],[-1,0]];
-        for(let [ax, ay] of adj) {
-            let tx = state.probe.x + ax, ty = state.probe.y + ay;
-            if(state.map[ty] && state.map[ty][tx] === '+') {
-                state.map[ty][tx] = '.'; // 门变地板
-                const cost = rules.doorCost(Math.random);
-                advanceTime(cost);
-                log.innerText = `DOOR BYPASSED. (+${cost} TIME)`;
-                acted = true;
-                break;
-            }
-        }
-    }
-    
-    if(!acted) log.innerText = "NO INTERACTABLE OBJECTS.";
+    const door = findDoor();
+    if (door) toggleDoor(door);
+    else message('NO INTERACTABLE OBJECTS.', '#ffff55');
 }
 
-/**
- * 进入地牢实例
- */
+export function handleScan() {
+    if (state.mode !== 'INSTANCE') { message('SCANNER AVAILABLE INSIDE A SITE.', '#ffff55'); return; }
+    const result = scanForMotion(state);
+    state.scanPings = result.pings;
+    playSound('scanner');
+    if (!advanceTime(1)) message(`MOTION SCAN: ${result.count} CONTACT${result.count === 1 ? '' : 'S'}. ? = LAST PING.`);
+    render();
+}
+
+export function handleVent() {
+    if (state.mode !== 'INSTANCE') { message('VENT CONTROL AVAILABLE INSIDE A SITE.', '#ffff55'); return; }
+    const result = ventAirlock(state);
+    if (!result.activated) {
+        playSound('blocked');
+        message('NO AIRLOCK WITHIN 6 TILES.', '#ffff55');
+    } else {
+        playSound('vent');
+        if (result.droneInDanger) {
+            if (!advanceTime(1, { skipThreats: true })) loseActiveDrone('AIRLOCK VENT');
+        } else if (!advanceTime(1)) {
+            message(`AIRLOCK VENTED. ${result.killed} CREATURE${result.killed === 1 ? '' : 'S'} EXPELLED.`);
+        }
+    }
+    render();
+}
+
 export function enterInstance() {
+    if (!state.drones.some(drone => drone.alive)) {
+        playSound('blocked');
+        message('ALL DRONES LOST. START A NEW EXPEDITION AT THE COMMAND CENTER.', '#ff5555');
+        return;
+    }
     const res = WorldManager.enterInstance(state.worldPos.x, state.worldPos.y);
     if (!res) return;
-    
     state.mode = 'INSTANCE';
     state.map = res.map;
     state.currentInstanceKey = res.instanceKey;
     state.lastDecayCheck = state.time;
-
-
     let startX, startY;
-    // 统一处理：优先找地图上的 H，找不到再用 startRoom
-    let foundH = false;
-    for(let y=0; y<state.map.length; y++) {
-        for(let x=0; x<state.map[y].length; x++) {
-            if(state.map[y][x] === 'H') { startX = x; startY = y; foundH = true; break; }
+    for (let y = 0; y < state.map.length && startX === undefined; y++) {
+        for (let x = 0; x < state.map[y].length; x++) {
+            if (state.map[y][x] === 'H') { startX = x; startY = y; break; }
         }
-        if(foundH) break;
     }
-
-    if(!foundH && res.startRoom) {
+    if (startX === undefined && res.startRoom) {
         startX = res.startRoom.cx;
         startY = res.startRoom.cy;
     }
-
+    if (startX === undefined) { state.mode = 'WORLD'; message('SITE HAS NO ACCESS POINT.', '#ff5555'); return; }
     state.probe = { x: startX, y: startY, facing: 'd' };
-    state.pathStack = [{x: startX, y: startY, c: 'H'}];
+    state.pathStack = [{ x: startX, y: startY, c: 'H' }];
     state.movingCargo = [];
-
+    state.scanPings = [];
+    state.threatClock = 0;
     state.map[startY][startX] = 'H';
+    const loc = WorldManager.state.instances[state.currentInstanceKey];
+    prepareDoors(loc);
+    initializeThreats(state, loc, { x: startX, y: startY }, loc.type);
     updateInstanceCargoVisibility();
-
-    const log = document.getElementById('log');
-    if (log) {
-        const tile = WorldManager.state.overworld[state.worldPos.y][state.worldPos.x];
-        log.style.color = "#55ff55";
-        log.innerText = `PROBE LINK ESTABLISHED: ${(SITE_INFO[tile] || {}).name || 'SITE'}.`;
-    }
+    const tile = WorldManager.state.overworld[state.worldPos.y][state.worldPos.x];
+    message(`${state.activeDrone} LINK ESTABLISHED: ${(SITE_INFO[tile] || {}).name || 'SITE'}. SCAN FOR MOTION.`);
 }
 
-/**
- * 退出地牢实例
- */
 export function exitInstance() {
     const loc = WorldManager.state.instances[state.currentInstanceKey];
     if (loc && loc.type !== 'W' && !loc.looted && !state.map.some(row => row.includes('O'))) {
@@ -288,30 +308,29 @@ export function exitInstance() {
     state.evacConfirm = false;
     state.saveConfirm = false;
     state.movingCargo = [];
+    state.scanPings = [];
     state.currentInstanceKey = null;
     WorldManager.saveToStorage(state);
+    playSound('evac');
+    message('DRONE RECOVERED. SITE DATA SAVED.');
 }
 
-/**
- * 在大世界移动
- */
 export function moveInWorld(key) {
-    const moves = {'w':[0,-1],'s':[0,1],'a':[-1,0],'d':[1,0]};
-    let [dx, dy] = moves[key] || [0,0];
-    let nx = state.worldPos.x + dx, ny = state.worldPos.y + dy;
-    const size = CONFIG.WORLD_SIZE;
-    if (nx >= 0 && nx < size && ny >= 0 && ny < size) {
-        state.worldPos.x = nx; state.worldPos.y = ny;
+    if (!moves[key]) return;
+    const [dx, dy] = moves[key];
+    const nx = state.worldPos.x + dx, ny = state.worldPos.y + dy;
+    if (nx >= 0 && nx < CONFIG.WORLD_SIZE && ny >= 0 && ny < CONFIG.WORLD_SIZE) {
+        state.worldPos.x = nx;
+        state.worldPos.y = ny;
         WorldManager.state.playerPos = { x: nx, y: ny };
         state.saveConfirm = false;
-        advanceTime(rules.worldStep()); // 世界上移动消耗时间（默认 5 分钟）
+        playSound('move');
+        if (advanceTime(rules.worldStep())) return;
         const tile = WorldManager.state.overworld[ny][nx];
-        const log = document.getElementById('log');
-        if (log && SITE_INFO[tile]) {
+        if (SITE_INFO[tile]) {
             const loc = WorldManager.state.instances[`${nx},${ny}`];
             const tag = loc && loc.looted ? ' (LOOTED)' : (loc && loc.visited ? ' (VISITED)' : '');
-            log.style.color = "#55ff55";
-            log.innerText = `${SITE_INFO[tile].name}${tag}. PRESS EXEC.`;
+            message(`${SITE_INFO[tile].name}${tag}. PRESS EXEC.`);
         }
     }
 }

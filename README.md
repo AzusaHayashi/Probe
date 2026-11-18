@@ -11,7 +11,10 @@ Haul **25 cargo** to the **Command Center (I)** and launch the uplink beacon bef
 - **Overworld:** walk onto `F` factory / `S` supermarket / `M` mine and press EXEC to send the probe in. Each step costs 5 min.
 - **Probe:** first press turns it, the next moves. It only sees in a cone. Walking back over the tether retracts it. The tether has a max length.
 - **Cargo `O`:** stand on it and press EXEC; it rides the tether home. Cargo you've seen can rot away.
-- **Doors `+`:** EXEC next to one to hack it (3–5 min).
+- **Doors `+`:** EXEC next to one to hack it (3–5 min, or 1–2 with DOOR HACKER). EXEC again to seal it for 1 min. To seal a door behind you, first face back toward it, then EXEC. Closed doors block creatures and the probe, even across the tether; reopen them before retracting.
+- **Creatures `X`:** hunt the active drone through open passages. Your squad has three drones; losing one is permanent for the run. A surviving drone deploys at the base, with any creature on the base repelled, but cargo still in transit is lost. If the entire squad is destroyed, the expedition ends.
+- **Motion scanner:** `P` / SCAN pings creatures within 10 Manhattan tiles, even behind walls. `?` marks a last-known contact for a few turns.
+- **Airlocks `A`:** `V` / VENT activates the nearest airlock within six Manhattan tiles. Creatures in its 3×3 area are expelled. **Your drone is destroyed if it is in that area too**: stand back first. Workshops are safe.
 - **Evacuate:** go back to `H` and press EXEC twice.
 - **`W` workshop:** `T` = tether +1 (5 cargo), `S` = transport speed +1 (2 cargo).
 - **`I` command center:** launch the beacon, upgrade probe vision, export your save.
@@ -23,11 +26,13 @@ Haul **25 cargo** to the **Command Center (I)** and launch the uplink beacon bef
 - **Paint booth:** recolor your rig and probe. White is free; other paints are unlocked with DATA.
 - Each run deals a random **perk** and **curse**. Every win sends you deeper: the next beacon needs 5 more cargo.
 
-Controls: WASD / arrow keys, Space / Enter = EXEC. On phones, use the on-screen pad.
+Controls: WASD / arrow keys, Space / Enter = EXEC, P = SCAN, V = VENT, M = sound on/off. On phones, use the on-screen controls. Creatures move as time advances; turning, retracting, scanning and venting cost time. Sound starts after the first interaction, in accordance with browser audio rules.
 
 ## 开发 / Dev
 ```bash
 npm install
 npm run dev     # 本地开发
 npm run build   # 打包成单个 dist/index.html
+npm test        # gameplay and persistence tests
+npm run build:worker # prepare dist/worker.js for the existing Cloudflare Worker
 ```

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PROBE — a terminal extraction game</title>
     <meta name="description" content="Pilot a tethered probe through a fog-eaten world. Haul cargo, launch the uplink.">
     <meta property="og:title" content="PROBE">
@@ -12,29 +12,36 @@
     <link rel="stylesheet" href="./src/style.css">
 </head>
 <body>
-    <div id="stats">
+    <div id="stats" aria-label="Expedition status">
         <div>TIME <span id="val-time">0</span></div>
         <div>SIGNAL <span id="val-signal">0</span></div>
         <div>TETHER <span id="val-len">0</span>/<span id="val-max-len">35</span></div>
         <div>CARGO <span id="val-res">0</span>/<span id="val-goal">25</span></div>
     </div>
-    <div id="log">SYSTEM READY.</div>
-    <div id="game-screen"></div>
-    <div id="legend"></div>
+    <div id="drone-status" aria-live="polite">DRONES: 0/0 ALIVE | ACTIVE: NONE</div>
+    <div id="drone-roster" aria-label="Drone roster"></div>
+    <div id="log" role="status" aria-live="polite">SYSTEM READY.</div>
+    <div id="game-screen" aria-label="ASCII game map"></div>
+    <div id="legend" aria-label="Controls and map legend"></div>
     <div class="toolbar">
-        <button id="btn-help" class="tool">HELP</button>
-        <button id="btn-hangar" class="tool">HANGAR</button>
-        <button id="btn-import" class="tool">IMPORT SAVE</button>
-        <input type="file" id="import-input" accept=".json" style="display:none">
+        <button type="button" id="btn-help" class="tool">HELP</button>
+        <button type="button" id="btn-hangar" class="tool">HANGAR</button>
+        <button type="button" id="btn-import" class="tool">IMPORT SAVE</button>
+        <input type="file" id="import-input" accept=".json" hidden>
     </div>
     <div id="overlay"></div>
 
-    <div class="ctrl-layer">
-        <div class="d-pad">
-            <div></div><div class="btn" id="btn-up">↑</div><div></div>
-            <div class="btn" id="btn-left">←</div><div class="btn" id="btn-down">↓</div><div class="btn" id="btn-right">→</div>
+    <div class="ctrl-layer" role="group" aria-label="Game controls">
+        <div class="d-pad" role="group" aria-label="Movement controls">
+            <span></span><button type="button" class="btn" id="btn-up" aria-label="Move up">↑</button><span></span>
+            <button type="button" class="btn" id="btn-left" aria-label="Move left">←</button><button type="button" class="btn" id="btn-down" aria-label="Move down">↓</button><button type="button" class="btn" id="btn-right" aria-label="Move right">→</button>
         </div>
-        <div class="btn action-btn" id="btn-exec">EXEC</div>
+        <div class="action-pad" role="group" aria-label="Actions">
+            <button type="button" class="btn action-btn" id="btn-exec" aria-keyshortcuts="Space Enter">EXEC</button>
+            <button type="button" class="btn action-btn" id="btn-scan" aria-keyshortcuts="P" aria-label="Scan for creatures, P">SCAN [P]</button>
+            <button type="button" class="btn action-btn vent-btn" id="btn-vent" aria-keyshortcuts="V" aria-label="Vent nearest airlock, V">VENT [V]</button>
+            <button type="button" class="btn action-btn" id="btn-sound" aria-keyshortcuts="M" aria-pressed="true" aria-label="Sound enabled, M">SOUND ON</button>
+        </div>
     </div>
 
     <script type="module" src="./src/main.js"></script>
