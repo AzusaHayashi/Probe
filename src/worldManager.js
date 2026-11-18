@@ -1,4 +1,5 @@
 import { generateDungeon } from './mapGen.js';
+import { CONFIG } from './constants.js';
 
 export const WorldManager = {
     state: {
@@ -14,13 +15,9 @@ export const WorldManager = {
 
     // 初始化大世界
     init(seed) {
-        this.state.globalSeed = seed;
         this.state.overworld = this.generateOverworld(seed);
         this.state.explored = new Set();
         this.state.revealedTiles = {};
-        if (!this.loadFromStorage()) {
-            this.saveToStorage();
-        }
     },
 
     loadFromStorage(gameState = null) {
@@ -45,6 +42,10 @@ export const WorldManager = {
                 gameState.probeVisionBonus = g.probeVisionBonus ?? 0;
                 gameState.tetherMax = g.tetherMax ?? 35;
                 gameState.transportSpeed = g.transportSpeed ?? 1;
+                gameState.worldViewRadius = g.worldViewRadius ?? CONFIG.START_VIEW_RADIUS;
+                gameState.lastFogReductionTime = g.lastFogReductionTime ?? 0;
+                gameState.totalCollected = g.totalCollected ?? 0;
+                gameState.sitesLooted = g.sitesLooted ?? 0;
             }
             return true;
         }
@@ -54,7 +55,9 @@ export const WorldManager = {
     // 生成大世界地图 (50x50)
     generateOverworld(seed) {
         const rng = this.createRng(seed);
-        const size = 50;
+        const size = CONFIG.WORLD_SIZE;
+        this.state.globalSeed = seed;
+        this.state.instances = {}; // 新世界：清空旧地点
         let world = Array(size).fill().map(() => Array(size).fill('.'));
 
         // 随机撒布“探索点”：F=工厂，S=超市，E=撤离点，W=工坊
@@ -97,35 +100,6 @@ export const WorldManager = {
         return world;
     },
 
-    // 更新玩家周围的视野，揭示地图
-    updateVisibility() {
-        const px = this.state.playerPos.x;
-        const py = this.state.playerPos.y;
-        const radius = 5;
-
-        for (let dy = -radius; dy <= radius; dy++) {
-            for (let dx = -radius; dx <= radius; dx++) {
-                let tx = px + dx, ty = py + dy;
-                if (tx < 0 || tx >= 50 || ty < 0 || ty >= 50) continue;
-
-                let dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist <= radius) {
-                    let key = `${tx},${ty}`;
-                    let tile = this.state.overworld[ty][tx];
-
-                    if (tile !== '.') {
-                        if (!this.state.revealedTiles[key]) {
-                            this.state.revealedTiles[key] = { tile: tile, visible: true };
-                        } else {
-                            this.state.revealedTiles[key].visible = true;
-                        }
-                        this.state.explored.add(key);
-                    }
-                }
-            }
-        }
-    },
-
     // 进入某个坐标的地牢
     enterInstance(x, y) {
         const key = `${x},${y}`;
@@ -160,7 +134,7 @@ export const WorldManager = {
             return { map: loc.savedMap, isNew: false, instanceKey: key };
         } else {
             // 第一次进入，使用该点位固定的种子生成
-            const result = generateDungeon(loc.seed);
+            const result = generateDungeon(loc.seed, loc.type);
             loc.savedMap = result.map; // 立即快照
             loc.cargoSeen = new Set(); // 初始化资源包可见状态
             return { map: result.map, startRoom: result.startRoom, isNew: true, instanceKey: key };
@@ -196,14 +170,24 @@ export const WorldManager = {
             explored: Array.from(this.state.explored)
         };
 
-        // 如果传入了游戏全局状态，则合并保存
+        // 如果传入了游戏全局状态，则合并保存；否则保留上一次保存的全局状态
+        if (!gameState) {
+            try {
+                const prev = JSON.parse(localStorage.getItem('scavenge_world_data') || 'null');
+                if (prev && prev.globalGameState) toSave.globalGameState = prev.globalGameState;
+            } catch (e) { /* ignore */ }
+        }
         if (gameState) {
             toSave.globalGameState = {
                 time: gameState.time,
                 resources: gameState.resources,
                 probeVisionBonus: gameState.probeVisionBonus,
                 tetherMax: gameState.tetherMax,
-                transportSpeed: gameState.transportSpeed
+                transportSpeed: gameState.transportSpeed,
+                worldViewRadius: gameState.worldViewRadius,
+                lastFogReductionTime: gameState.lastFogReductionTime,
+                totalCollected: gameState.totalCollected,
+                sitesLooted: gameState.sitesLooted
             };
         }
 

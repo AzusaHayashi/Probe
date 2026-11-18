@@ -1,7 +1,7 @@
-﻿import { WorldManager } from './worldManager.js';
+import { WorldManager } from './worldManager.js';
 import { isVisible } from './visibility.js';
 import { state } from './gameState.js';
-import { CONFIG } from './constants.js';
+import { CONFIG, SITE_INFO } from './constants.js';
 
 /**
  * 核心渲染入口
@@ -14,14 +14,91 @@ export function render() {
     } else {
         renderInstance();
     }
-    
-    const valTime = document.getElementById('val-time');
-    const valRes = document.getElementById('val-res');
-    const valMaxLen = document.getElementById('val-max-len');
-    
-    if (valTime) valTime.innerText = state.time;
-    if (valRes) valRes.innerText = state.resources;
-    if (valMaxLen) valMaxLen.innerText = state.tetherMax;
+
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.innerText = v; };
+    set('val-time', state.time);
+    set('val-res', state.resources);
+    set('val-goal', CONFIG.UPLINK_COST);
+    set('val-max-len', state.tetherMax);
+    set('val-signal', Math.max(0, CONFIG.SIGNAL_DEADLINE - state.time));
+    if (state.mode !== 'INSTANCE') set('val-len', state.tetherMax);
+
+    const signal = document.getElementById('val-signal');
+    if (signal) signal.style.color = (CONFIG.SIGNAL_DEADLINE - state.time) < 2000 ? '#ff5555' : '';
+
+    renderLegend();
+    renderOverlay();
+}
+
+const LEGENDS = {
+    WORLD: '@ you · F factory · S supermarket · M mine · W workshop · E evac/save · I command center',
+    INSTANCE: '^>v< probe · O cargo · + door (EXEC next to it) · H base · walk back along the tether to retract',
+    MENU: '↑↓ choose · EXEC select'
+};
+
+function renderLegend() {
+    const el = document.getElementById('legend');
+    if (!el) return;
+    let text = LEGENDS[state.mode] || '';
+    if (state.mode === 'INSTANCE') {
+        const loc = WorldManager.state.instances[state.currentInstanceKey];
+        if (loc && loc.type === 'W') text = 'T tether +1 (5 cargo) · S speed +1 (2 cargo) · stand on it, EXEC · H exit';
+    }
+    el.innerText = text;
+}
+
+/**
+ * 标题 / 帮助 / 胜利 / 失败 覆盖层
+ */
+export function renderOverlay() {
+    const el = document.getElementById('overlay');
+    if (!el) return;
+    if (!state.overlay) { el.style.display = 'none'; return; }
+    el.style.display = 'flex';
+
+    let best = null;
+    try { best = JSON.parse(localStorage.getItem('probe_best') || 'null'); } catch (e) { /* ignore */ }
+    const bestLine = best ? `<p class="dim-line">BEST RUN: uplink at ${best.time} min</p>` : '';
+    const hasSave = !!localStorage.getItem('scavenge_world_data');
+
+    let html = '';
+    if (state.overlay === 'TITLE' || state.overlay === 'HELP') {
+        html = `
+<pre class="logo">
+ ___  ___  ___  ___  ___
+| _ \\| _ \\/ _ \\| _ )| __|
+|  _/|   / (_) | _ \\| _|
+|_|  |_|_\\\\___/|___/|___|
+</pre>
+<p>The fog is eating the world. You run a tethered probe from a mobile rig.</p>
+<p><b>GOAL:</b> haul <b>${CONFIG.UPLINK_COST} cargo</b> to the <b>COMMAND CENTER (I)</b> and launch the uplink beacon before the signal dies at <b>${CONFIG.SIGNAL_DEADLINE} min</b>.</p>
+<ul>
+<li>Overworld: walk onto <b>F</b>/<b>S</b>/<b>M</b> and press EXEC to send the probe in. Each step costs 5 min. Vision shrinks every ${CONFIG.FOG_INTERVAL} min.</li>
+<li>Probe: the first press turns it, the next moves. It only sees in a cone. Walking back over the tether retracts it.</li>
+<li>Stand on <b>O</b> and press EXEC: cargo rides the tether home. Seen cargo can rot away, so grab it fast.</li>
+<li>EXEC beside a <b>+</b> door to hack it (3–5 min). Return to <b>H</b> and press EXEC twice to evacuate.</li>
+<li><b>W</b> workshop: longer tether and faster transport. <b>I</b>: vision upgrade, the beacon, export save.</li>
+<li><b>E</b> is a save point. The game also auto-saves when you leave a site.</li>
+</ul>
+<p class="dim-line">Keys: WASD / arrows, Space / Enter = EXEC. On phone use the pad.</p>
+${bestLine}
+<p class="blink">PRESS EXEC TO ${state.overlay === 'HELP' ? 'RESUME' : (hasSave ? 'CONTINUE' : 'BEGIN')}</p>`;
+    } else if (state.overlay === 'WIN') {
+        html = `
+<h2 class="win">UPLINK ESTABLISHED</h2>
+<p>The beacon cuts through the fog. Rescue is inbound.</p>
+<p>Time: <b>${state.time} min</b> · Cargo hauled: <b>${state.totalCollected}</b> · Sites cleared: <b>${state.sitesLooted}</b></p>
+${state.newRecord ? '<p class="win">NEW BEST RUN!</p>' : bestLine}
+<p class="blink">PRESS EXEC FOR A NEW EXPEDITION</p>`;
+    } else if (state.overlay === 'LOSE') {
+        html = `
+<h2 class="lose">SIGNAL LOST</h2>
+<p>The fog closed in at ${CONFIG.SIGNAL_DEADLINE} min. The rig goes dark.</p>
+<p>Cargo hauled: <b>${state.totalCollected}</b> · In the hold: <b>${state.resources}</b>/${CONFIG.UPLINK_COST} · Sites cleared: <b>${state.sitesLooted}</b></p>
+${bestLine}
+<p class="blink">PRESS EXEC TO TRY AGAIN</p>`;
+    }
+    el.innerHTML = '<div class="overlay-box">' + html + '</div>';
 }
 
 /**
@@ -39,7 +116,7 @@ export function renderWorld() {
     const yStart = Math.max(0, py - viewportSize);
     const yEnd = Math.min(worldMap.length, py + viewportSize + 1);
     const xStart = Math.max(0, px - viewportSize);
-    const xEnd = Math.min(worldMap[0]?.length || 50, px + viewportSize + 1);
+    const xEnd = Math.min(worldMap[0]?.length || CONFIG.WORLD_SIZE, px + viewportSize + 1);
 
     for(let y = yStart; y < yEnd; y++) {
         html += "<div>";
@@ -67,7 +144,7 @@ export function renderWorld() {
                         WorldManager.state.revealedTiles[key] = { tile: char, visible: true };
                     }
                     WorldManager.state.explored.add(key);
-                    className = isVisited ? "explored-highlight" : "lit";
+                    className = (loc && loc.looted) ? "looted" : (isVisited ? "explored-highlight" : "lit");
                 } else {
                     char = ".";
                     className = "lit";
@@ -106,7 +183,7 @@ export function renderInstance() {
 
     const px = state.probe.x;
     const py = state.probe.y;
-    const viewDist = Math.ceil(CONFIG.VIEW_DIST || 6) + 3;
+    const viewDist = Math.ceil(CONFIG.VIEW_DIST + (state.probeVisionBonus || 0)) + 3;
     const vpSize = Math.max(viewDist, 10);
 
     const yStart = Math.max(0, py - vpSize);
@@ -162,7 +239,7 @@ export function renderInstance() {
 export function renderMenu() {
     let html = '<div class="menu-container">';
     html += '<h2 style="color: #55ff55; text-align: center;">--- COMMAND CENTER ---</h2>';
-    html += '<div style="margin-bottom: 20px; text-align: center; color: #aaa;">Current Resources: <span style="color: #fff;">' + state.resources + '</span></div>';
+    html += '<div style="margin-bottom: 20px; text-align: center; color: #aaa;">Cargo in hold: <span style="color: #fff;">' + state.resources + '</span> / ' + CONFIG.UPLINK_COST + ' for the beacon</div>';
     
     state.menu.options.forEach(function(opt, index) {
         const isSelected = index === state.menu.currentIndex;

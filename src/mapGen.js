@@ -1,4 +1,4 @@
-﻿import { CONFIG } from "./constants.js";
+import { CONFIG, SITE_INFO } from "./constants.js";
 
 function createRandom(seed) {
     let s = seed;
@@ -8,8 +8,9 @@ function createRandom(seed) {
     };
 }
 
-export function generateDungeon(seed) {
+export function generateDungeon(seed, type = "F") {
     const rng = createRandom(seed);
+    const info = SITE_INFO[type] || SITE_INFO.F;
     
     let map = Array(CONFIG.SIZE).fill().map(() => Array(CONFIG.SIZE).fill("#"));
     let rooms = [];
@@ -30,10 +31,13 @@ export function generateDungeon(seed) {
             rooms.push({x, y, w, h, cx: x+Math.floor(w/2), cy: y+Math.floor(h/2)});
             
             // 先消费 rng（保持种子确定性），但只记录 cargo 位置，不实际放置
-            if (rng() > 0.5) {
+            if (rng() < info.cargoChance) {
                 let ox = x + Math.floor(rng() * w);
                 let oy = y + Math.floor(rng() * h);
                 pendingCargo.push({x: ox, y: oy});
+                if (rng() < info.extraChance) {
+                    pendingCargo.push({x: x + Math.floor(rng() * w), y: y + Math.floor(rng() * h)});
+                }
             }
         }
     }
@@ -54,7 +58,9 @@ export function generateDungeon(seed) {
     }
 
     // 3. 放置 cargo（在走廊之后，避免被走廊覆盖）
+    const start = rooms[0];
     for(let c of pendingCargo) {
+        if (start && c.x === start.cx && c.y === start.cy) continue;
         if (map[c.y][c.x] === ".") {
             map[c.y][c.x] = "O";
         }

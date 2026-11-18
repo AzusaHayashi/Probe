@@ -3,23 +3,31 @@ import { setupControls } from './controls.js';
 import { state } from './gameState.js';
 import { render } from './renderer.js';
 import { handleMove, handleExec } from './actions.js';
-import { handleMenuInput } from './menuManager.js';
+import { handleMenuInput, startNewExpedition } from './menuManager.js';
 
 function init() {
     // 优先尝试从本地存储加载
     const hasSave = WorldManager.loadFromStorage(state);
 
     if (!hasSave) {
-        // 如果没有存档，则初始化新世界
-        const randomSeed = Math.floor(Math.random() * 999999);
-        WorldManager.init(randomSeed);
+        startNewExpedition();
     }
 
     state.worldPos = { ...WorldManager.state.playerPos };
-    
-    // 初始化控制逻辑
+    state.overlay = 'TITLE';
+
+    // 覆盖层（标题/帮助/结局）打开时：EXEC 关闭它，其他键忽略
+    const closeOverlay = () => {
+        if (state.overlay === 'WIN' || state.overlay === 'LOSE') {
+            startNewExpedition();
+        }
+        state.overlay = null;
+        render();
+    };
+
     setupControls(
         (key) => {
+            if (state.overlay) return;
             if (state.mode === 'MENU') {
                 handleMenuInput(key);
                 render();
@@ -28,6 +36,7 @@ function init() {
             }
         },
         () => {
+            if (state.overlay) { closeOverlay(); return; }
             if (state.mode === 'MENU') {
                 handleMenuInput('exec');
                 render();
@@ -36,6 +45,15 @@ function init() {
             }
         }
     );
+
+    document.getElementById('btn-help').addEventListener('click', () => {
+        if (state.overlay === 'WIN' || state.overlay === 'LOSE') return;
+        state.overlay = state.overlay ? null : 'HELP';
+        render();
+    });
+    document.getElementById('overlay').addEventListener('click', () => {
+        if (state.overlay === 'TITLE' || state.overlay === 'HELP') closeOverlay();
+    });
 
     const importInput = document.getElementById('import-input');
     const importBtn = document.getElementById('btn-import');
@@ -50,6 +68,8 @@ function init() {
                 const data = JSON.parse(ev.target.result);
                 localStorage.setItem('scavenge_world_data', JSON.stringify(data));
                 WorldManager.loadFromStorage(state);
+                state.mode = 'WORLD';
+                state.overlay = null;
                 state.worldPos = { ...WorldManager.state.playerPos };
                 document.getElementById('log').style.color = "#55ff55";
                 document.getElementById('log').innerText = "SAVE IMPORTED SUCCESSFULLY.";

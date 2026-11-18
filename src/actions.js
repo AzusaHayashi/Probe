@@ -1,6 +1,7 @@
-﻿import { WorldManager } from './worldManager.js';
+import { WorldManager } from './worldManager.js';
 import { state, advanceTime, checkCargoCollection, checkCargoDecay, updateInstanceCargoVisibility } from './gameState.js';
 import { render } from './renderer.js';
+import { CONFIG, SITE_INFO } from './constants.js';
 
 /**
  * 处理移动指令
@@ -32,9 +33,9 @@ export function handleExec() {
                 log.style.color = "#ffff00";
                 log.innerText = "CONFIRM SAVE? (Press EXEC again to SAVE, or move to cancel)";
             } else {
-                WorldManager.saveToStorage(state);
                 const key = `${state.worldPos.x},${state.worldPos.y}`;
                 if (WorldManager.state.instances[key]) WorldManager.state.instances[key].visited = true;
+                WorldManager.saveToStorage(state);
                 log.style.color = "#55ff55";
                 log.innerText = "DATABASE SAVED TO LOCAL STORAGE.";
                 state.saveConfirm = false;
@@ -45,6 +46,9 @@ export function handleExec() {
             state.menu.confirming = false;
             log.style.color = "#55ff55";
             log.innerText = "DOCKING COMPLETE. COMMAND CENTER ACTIVE.";
+        } else {
+            log.style.color = "#55ff55";
+            log.innerText = "NOTHING HERE. FIND A SITE (F/S/M/W), E OR I.";
         }
     } else if (state.mode === 'INSTANCE') {
         // 撤离逻辑：检查是否在底座 'H' 上
@@ -53,9 +57,25 @@ export function handleExec() {
             if (!state.evacConfirm) {
                 state.evacConfirm = true;
                 log.style.color = "#ffff00";
-                log.innerText = "CONFIRM EVACUATION? (Press EXEC)";
+                log.innerText = state.movingCargo.length > 0
+                    ? "CARGO IN TRANSIT. EXEC = WAIT FOR IT & EVACUATE."
+                    : "CONFIRM EVACUATION? (Press EXEC)";
             } else {
+                // 等待运输中的货物到达再撤离
+                let waited = 0;
+                if (state.movingCargo.length > 0) {
+                    const far = Math.max(...state.movingCargo.map(c => c.pathIndex));
+                    waited = Math.ceil(far / state.transportSpeed);
+                    if (waited > 0) advanceTime(waited);
+                    state.movingCargo.forEach(c => { c.pathIndex = 0; });
+                    checkCargoCollection();
+                }
+                if (state.overlay) { render(); return; }
                 exitInstance();
+                log.style.color = "#55ff55";
+                log.innerText = waited > 0
+                    ? `EVACUATED. WAITED ${waited} MIN FOR CARGO. AUTO-SAVED.`
+                    : "EVACUATED. AUTO-SAVED.";
             }
         } else {
             executeAction(); 
@@ -218,7 +238,7 @@ export function enterInstance() {
     state.mode = 'INSTANCE';
     state.map = res.map;
     state.currentInstanceKey = res.instanceKey;
-    state.lastDecayCheck = 0;
+    state.lastDecayCheck = state.time;
 
 
     let startX, startY;
@@ -244,19 +264,31 @@ export function enterInstance() {
     updateInstanceCargoVisibility();
 
     const log = document.getElementById('log');
-    if (log) log.innerText = "PROBE LINK ESTABLISHED.";
+    if (log) {
+        const tile = WorldManager.state.overworld[state.worldPos.y][state.worldPos.x];
+        log.style.color = "#55ff55";
+        log.innerText = `PROBE LINK ESTABLISHED: ${(SITE_INFO[tile] || {}).name || 'SITE'}.`;
+    }
 }
 
 /**
  * 退出地牢实例
  */
 export function exitInstance() {
-    WorldManager.updateInstanceState(state.worldPos.x, state.worldPos.y, state.map);
+    const loc = WorldManager.state.instances[state.currentInstanceKey];
+    if (loc && loc.type !== 'W' && !loc.looted && !state.map.some(row => row.includes('O'))) {
+        loc.looted = true;
+        state.sitesLooted += 1;
+    }
+    if (loc && loc.type !== 'W') {
+        WorldManager.updateInstanceState(state.worldPos.x, state.worldPos.y, state.map);
+    }
     state.mode = 'WORLD';
     state.evacConfirm = false;
     state.saveConfirm = false;
     state.movingCargo = [];
-
+    state.currentInstanceKey = null;
+    WorldManager.saveToStorage(state);
 }
 
 /**
@@ -266,10 +298,19 @@ export function moveInWorld(key) {
     const moves = {'w':[0,-1],'s':[0,1],'a':[-1,0],'d':[1,0]};
     let [dx, dy] = moves[key] || [0,0];
     let nx = state.worldPos.x + dx, ny = state.worldPos.y + dy;
-    if (nx >= 0 && nx < 50 && ny >= 0 && ny < 50) {
+    const size = CONFIG.WORLD_SIZE;
+    if (nx >= 0 && nx < size && ny >= 0 && ny < size) {
         state.worldPos.x = nx; state.worldPos.y = ny;
         WorldManager.state.playerPos = { x: nx, y: ny };
-        advanceTime(5); // 世界上移动消耗 5 分钟
         state.saveConfirm = false;
+        advanceTime(5); // 世界上移动消耗 5 分钟
+        const tile = WorldManager.state.overworld[ny][nx];
+        const log = document.getElementById('log');
+        if (log && SITE_INFO[tile]) {
+            const loc = WorldManager.state.instances[`${nx},${ny}`];
+            const tag = loc && loc.looted ? ' (LOOTED)' : (loc && loc.visited ? ' (VISITED)' : '');
+            log.style.color = "#55ff55";
+            log.innerText = `${SITE_INFO[tile].name}${tag}. PRESS EXEC.`;
+        }
     }
 }

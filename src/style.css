@@ -14,3 +14,23 @@
 .action-btn { height: 135px; width: 80px; }
 .btn:active { background: #55ff55; color: #000; }
 #log { color: #ffff55; height: 20px; font-size: 12px; margin-top: 5px; }
+
+#stats { font-size: 13px; padding: 8px 4px; }
+#legend { color: #00aa00; font-size: 11px; max-width: 480px; text-align: center; padding: 0 8px; min-height: 28px; }
+.looted { color: #555; }
+.toolbar { display: flex; gap: 8px; margin-top: 6px; }
+.tool { background: rgba(0,20,0,0.8); border: 1px solid #55ff55; color: #55ff55; padding: 5px 10px; cursor: pointer; font-family: 'Courier New', monospace; }
+.tool:active { background: #55ff55; color: #000; }
+#overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.92); display: none; align-items: center; justify-content: center; z-index: 10; padding: 12px; box-sizing: border-box; overflow: auto; }
+.overlay-box { max-width: 520px; color: #55ff55; font-size: 13px; line-height: 1.45; border: 1px solid #55ff55; padding: 16px; background: #000; box-shadow: 0 0 18px rgba(85,255,85,0.25); max-height: 100%; overflow: auto; }
+.overlay-box ul { padding-left: 18px; margin: 8px 0; }
+.overlay-box li { margin-bottom: 4px; }
+.overlay-box b { color: #fff; }
+.logo { color: #55ff55; text-shadow: 0 0 6px #55ff55; text-align: center; font-size: 12px; margin: 0 0 8px; }
+.dim-line { color: #00aa00; }
+.win { color: #ffff55; text-align: center; text-shadow: 0 0 8px #ffff55; }
+.lose { color: #ff5555; text-align: center; text-shadow: 0 0 8px #ff5555; }
+.blink { text-align: center; color: #fff; animation: blink 1.1s steps(2) infinite; margin-top: 12px; }
+@keyframes blink { 50% { opacity: 0.2; } }
+@media (max-height: 700px) { #game-screen { max-height: 52vh; } }
+.menu-container { white-space: normal; width: min(360px, 86vw); font-size: 12px; }

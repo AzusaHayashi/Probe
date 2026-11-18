@@ -1,8 +1,13 @@
-﻿import { WorldManager } from "./worldManager.js";
+import { WorldManager } from "./worldManager.js";
 import { isVisible } from "./visibility.js";
+import { CONFIG } from "./constants.js";
 
 export const state = {
-    mode: "WORLD",
+    mode: "WORLD",          // WORLD | INSTANCE | MENU
+    overlay: null,          // null | "TITLE" | "HELP" | "WIN" | "LOSE"
+    probeVisionBonus: 0,
+    totalCollected: 0,
+    sitesLooted: 0,
     worldPos: { x: 5, y: 5 },
     map: [],
     pathStack: [],
@@ -18,10 +23,11 @@ export const state = {
     transportSpeed: 1,
     currentInstanceKey: null,
     lastDecayCheck: 0,
-    worldViewRadius: 10,
+    worldViewRadius: CONFIG.START_VIEW_RADIUS,
     lastFogReductionTime: 0,
     menu: {
         options: [
+            { id: "launch_uplink", label: "LAUNCH UPLINK BEACON (WIN)", cost: CONFIG.UPLINK_COST },
             { id: "upgrade_view", label: "UPGRADE PROBE VISION (+1)", cost: 20 },
             { id: "export_save", label: "EXPORT DATA TO FILE", cost: 0 },
             { id: "continue_current", label: "CONTINUE EXPLORATION (KEEP WORLD)", cost: 0 },
@@ -38,17 +44,23 @@ export const state = {
 export function advanceTime(amount) {
     state.time += amount;
 
-    // 每 1000 分钟减少 1 格大世界视野（增量判断，不累积）
-    if (state.time - state.lastFogReductionTime >= 1000) {
-        if (state.worldViewRadius > 1) {
-            state.worldViewRadius -= 1;
-        }
+    // 视野随时间缩减：每 FOG_INTERVAL 分钟 -1（按总时间计算，跨越多个区间也正确）
+    const targetRadius = Math.max(1, CONFIG.START_VIEW_RADIUS - Math.floor(state.time / CONFIG.FOG_INTERVAL));
+    if (targetRadius < state.worldViewRadius) {
+        state.worldViewRadius = targetRadius;
         state.lastFogReductionTime = state.time;
         const log = document.getElementById("log");
         if (log) {
             log.style.color = "#ff5555";
-            log.innerText = "Fog grows thicker.";
+            log.innerText = "FOG GROWS THICKER. WORLD VISION -1.";
         }
+    }
+
+    // 信号彻底消失 = 远征失败
+    if (state.time >= CONFIG.SIGNAL_DEADLINE && !state.overlay) {
+        state.overlay = "LOSE";
+        localStorage.removeItem("scavenge_world_data");
+        return;
     }
 
     // 只有在探索模式下，时间增加才会处理相关逻辑
@@ -73,6 +85,7 @@ export function checkCargoCollection() {
     state.movingCargo = state.movingCargo.filter(function(cargo) {
         if (cargo.pathIndex <= 0) {
             state.resources += 1;
+            state.totalCollected += 1;
             return false;
         }
         return true;

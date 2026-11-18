@@ -1,5 +1,6 @@
-﻿import { state } from './gameState.js';
+import { state } from './gameState.js';
 import { WorldManager } from './worldManager.js';
+import { CONFIG } from './constants.js';
 
 /**
  * 处理菜单界面的输入
@@ -42,7 +43,7 @@ export function handleMenuInput(key) {
         menu.confirming = true;
         if (log) {
             log.style.color = "#ffff00";
-            log.innerText = `CONFIRM ${option.id.toUpperCase()}? (Press EXEC to Confirm, Move to Cancel)`;
+            log.innerText = `CONFIRM: ${option.label}? (EXEC = yes, move = cancel)`;
         }
     }
 }
@@ -54,6 +55,19 @@ function executeMenuOption(option) {
     const log = document.getElementById('log');
 
     switch (option.id) {
+        case 'launch_uplink':
+            state.resources -= option.cost;
+            state.overlay = 'WIN';
+            try {
+                const best = JSON.parse(localStorage.getItem('probe_best') || 'null');
+                state.newRecord = !best || state.time < best.time;
+                if (state.newRecord) {
+                    localStorage.setItem('probe_best', JSON.stringify({ time: state.time, cargo: state.totalCollected }));
+                }
+            } catch (e) { /* ignore */ }
+            localStorage.removeItem('scavenge_world_data');
+            break;
+
         case 'upgrade_view':
             state.resources -= option.cost;
             // 修改常量配置中的视野范围（或增加一个新的偏移量状态）
@@ -64,6 +78,7 @@ function executeMenuOption(option) {
                 log.style.color = "#55ff55";
                 log.innerText = "PROBE VISION UPGRADED!";
             }
+            WorldManager.saveToStorage(state);
             break;
 
         case 'export_save':
@@ -124,24 +139,36 @@ function exportSaveData() {
  */
 function resetWorld() {
     const log = document.getElementById('log');
-    
-    // 1. 重置核心状态
-    state.time = 0;
-    state.worldViewRadius = 10;
-    state.lastFogReductionTime = 0;
-    state.mode = 'WORLD';
-    
-    // 2. 重新生成大世界
-    const newSeed = Math.floor(Math.random() * 999999);
-    WorldManager.state.overworld = WorldManager.generateOverworld(newSeed);
-    WorldManager.state.revealedTiles = {};
-    WorldManager.state.explored = new Set();
-    
-    // 3. 获取新的玩家起始点 (E)
-    state.worldPos = { ...WorldManager.state.playerPos };
-
+    startNewExpedition();
     if (log) {
         log.style.color = "#55ff55";
         log.innerText = "NEW EXPEDITION STARTED. WORLD REGENERATED.";
     }
+}
+
+/**
+ * 完全重置：新世界、新资源、新升级
+ */
+export function startNewExpedition() {
+    state.time = 0;
+    state.resources = 0;
+    state.totalCollected = 0;
+    state.sitesLooted = 0;
+    state.probeVisionBonus = 0;
+    state.tetherMax = CONFIG.MAX_TETHER;
+    state.transportSpeed = 1;
+    state.worldViewRadius = CONFIG.START_VIEW_RADIUS;
+    state.lastFogReductionTime = 0;
+    state.movingCargo = [];
+    state.currentInstanceKey = null;
+    state.mode = 'WORLD';
+    state.menu.currentIndex = 0;
+    state.menu.confirming = false;
+
+    WorldManager.state.instances = {};
+    WorldManager.state.revealedTiles = {};
+    WorldManager.state.explored = new Set();
+    WorldManager.init(Math.floor(Math.random() * 999999));
+    state.worldPos = { ...WorldManager.state.playerPos };
+    WorldManager.saveToStorage(state);
 }
