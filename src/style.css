@@ -34,3 +34,11 @@
 @keyframes blink { 50% { opacity: 0.2; } }
 @media (max-height: 700px) { #game-screen { max-height: 52vh; } }
 .menu-container { white-space: normal; width: min(360px, 86vw); font-size: 12px; }
+:root { --paint: #ffffff; }
+.me { color: var(--paint) !important; text-shadow: 0 0 8px var(--paint); font-weight: bold; }
+.sec { color: #00aa00; border-bottom: 1px dashed #003300; margin: 10px 0 4px; font-size: 11px; letter-spacing: 2px; }
+.h-item { display: flex; justify-content: space-between; gap: 8px; padding: 6px; cursor: pointer; color: #88cc88; }
+.h-item.sel { background: #112211; color: #fff; outline: 1px solid #55ff55; }
+.h-right { white-space: nowrap; color: #ffff55; }
+.perk { color: #55ffff; font-weight: bold; }
+.curse { color: #ff5555; font-weight: bold; }

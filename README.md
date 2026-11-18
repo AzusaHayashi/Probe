@@ -17,6 +17,12 @@ Haul **25 cargo** to the **Command Center (I)** and launch the uplink beacon bef
 - **`I` command center:** launch the beacon, upgrade probe vision, export your save.
 - **`E`:** save point. The game also auto-saves whenever you leave a site.
 
+## Roguelite
+- Every run, won or lost, earns **DATA** (cargo hauled + sites cleared, bonus for a win).
+- Spend DATA in the **HANGAR** on permanent upgrades (tether, lens, winch, seed cargo, fog shielding, door hacker).
+- **Paint booth:** recolor your rig and probe. White is free; other paints are unlocked with DATA.
+- Each run deals a random **perk** and **curse**. Every win sends you deeper: the next beacon needs 5 more cargo.
+
 Controls: WASD / arrow keys, Space / Enter = EXEC. On phones, use the on-screen pad.
 
 ## 开发 / Dev

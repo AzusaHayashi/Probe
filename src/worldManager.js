@@ -1,5 +1,6 @@
 import { generateDungeon } from './mapGen.js';
 import { CONFIG } from './constants.js';
+import { rules } from './meta.js';
 
 export const WorldManager = {
     state: {
@@ -46,6 +47,8 @@ export const WorldManager = {
                 gameState.lastFogReductionTime = g.lastFogReductionTime ?? 0;
                 gameState.totalCollected = g.totalCollected ?? 0;
                 gameState.sitesLooted = g.sitesLooted ?? 0;
+                gameState.run = g.run ?? { perk: null, curse: null, depth: 0, rewarded: false };
+                gameState.runActive = true;
             }
             return true;
         }
@@ -134,7 +137,7 @@ export const WorldManager = {
             return { map: loc.savedMap, isNew: false, instanceKey: key };
         } else {
             // 第一次进入，使用该点位固定的种子生成
-            const result = generateDungeon(loc.seed, loc.type);
+            const result = generateDungeon(loc.seed, loc.type, rules.cargoBonus());
             loc.savedMap = result.map; // 立即快照
             loc.cargoSeen = new Set(); // 初始化资源包可见状态
             return { map: result.map, startRoom: result.startRoom, isNew: true, instanceKey: key };
@@ -187,7 +190,8 @@ export const WorldManager = {
                 worldViewRadius: gameState.worldViewRadius,
                 lastFogReductionTime: gameState.lastFogReductionTime,
                 totalCollected: gameState.totalCollected,
-                sitesLooted: gameState.sitesLooted
+                sitesLooted: gameState.sitesLooted,
+                run: gameState.run
             };
         }
 

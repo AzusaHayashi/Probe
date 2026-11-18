@@ -1,10 +1,14 @@
 import { WorldManager } from "./worldManager.js";
 import { isVisible } from "./visibility.js";
 import { CONFIG } from "./constants.js";
+import { rules, rewardRun } from "./meta.js";
 
 export const state = {
     mode: "WORLD",          // WORLD | INSTANCE | MENU
-    overlay: null,          // null | "TITLE" | "HELP" | "WIN" | "LOSE"
+    overlay: null,          // null | TITLE | HELP | HANGAR | BRIEFING | WIN | LOSE
+    run: null,              // 本局 { perk, curse, depth, rewarded }
+    runActive: false,
+    hangarIndex: 0,
     probeVisionBonus: 0,
     totalCollected: 0,
     sitesLooted: 0,
@@ -27,7 +31,7 @@ export const state = {
     lastFogReductionTime: 0,
     menu: {
         options: [
-            { id: "launch_uplink", label: "LAUNCH UPLINK BEACON (WIN)", cost: CONFIG.UPLINK_COST },
+            { id: "launch_uplink", label: "LAUNCH UPLINK BEACON (WIN)", cost: CONFIG.UPLINK_COST, dynamic: true },
             { id: "upgrade_view", label: "UPGRADE PROBE VISION (+1)", cost: 20 },
             { id: "export_save", label: "EXPORT DATA TO FILE", cost: 0 },
             { id: "continue_current", label: "CONTINUE EXPLORATION (KEEP WORLD)", cost: 0 },
@@ -45,7 +49,7 @@ export function advanceTime(amount) {
     state.time += amount;
 
     // 视野随时间缩减：每 FOG_INTERVAL 分钟 -1（按总时间计算，跨越多个区间也正确）
-    const targetRadius = Math.max(1, CONFIG.START_VIEW_RADIUS - Math.floor(state.time / CONFIG.FOG_INTERVAL));
+    const targetRadius = Math.max(1, CONFIG.START_VIEW_RADIUS - Math.floor(state.time / rules.fogInterval()));
     if (targetRadius < state.worldViewRadius) {
         state.worldViewRadius = targetRadius;
         state.lastFogReductionTime = state.time;
@@ -57,8 +61,10 @@ export function advanceTime(amount) {
     }
 
     // 信号彻底消失 = 远征失败
-    if (state.time >= CONFIG.SIGNAL_DEADLINE && !state.overlay) {
+    if (state.runActive && state.time >= rules.deadline()) {
         state.overlay = "LOSE";
+        state.runActive = false;
+        rewardRun(false);
         localStorage.removeItem("scavenge_world_data");
         return;
     }
@@ -117,7 +123,7 @@ export function checkCargoDecay() {
                 if (state.map[y][x] === "O") {
                     var key = x + "," + y;
                     if (loc.cargoSeen.has(key) && !loc.cargoGone?.has(key)) {
-                        if (Math.random() < 1/20) {
+                        if (Math.random() < rules.decayChance()) {
                             if (!loc.cargoGone) loc.cargoGone = new Set();
                             loc.cargoGone.add(key);
                             state.map[y][x] = ".";

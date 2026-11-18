@@ -8,7 +8,7 @@ function createRandom(seed) {
     };
 }
 
-export function generateDungeon(seed, type = "F") {
+export function generateDungeon(seed, type = "F", cargoBonus = 0) {
     const rng = createRandom(seed);
     const info = SITE_INFO[type] || SITE_INFO.F;
     
@@ -31,7 +31,7 @@ export function generateDungeon(seed, type = "F") {
             rooms.push({x, y, w, h, cx: x+Math.floor(w/2), cy: y+Math.floor(h/2)});
             
             // 先消费 rng（保持种子确定性），但只记录 cargo 位置，不实际放置
-            if (rng() < info.cargoChance) {
+            if (rng() < Math.min(0.95, info.cargoChance + cargoBonus)) {
                 let ox = x + Math.floor(rng() * w);
                 let oy = y + Math.floor(rng() * h);
                 pendingCargo.push({x: ox, y: oy});

@@ -1,6 +1,11 @@
 import { state } from './gameState.js';
 import { WorldManager } from './worldManager.js';
 import { CONFIG } from './constants.js';
+import { rules, rewardRun, rollRun } from './meta.js';
+
+export function optionCost(option) {
+    return option.id === 'launch_uplink' ? rules.uplinkCost() : option.cost;
+}
 
 /**
  * 处理菜单界面的输入
@@ -32,10 +37,10 @@ export function handleMenuInput(key) {
         const option = menu.options[menu.currentIndex];
         
         // 检查资源是否足够
-        if (option.cost > 0 && state.resources < option.cost) {
+        if (optionCost(option) > 0 && state.resources < optionCost(option)) {
             if (log) {
                 log.style.color = "#ff5555";
-                log.innerText = `INSUFFICIENT RESOURCES! (Need ${option.cost})`;
+                log.innerText = `INSUFFICIENT CARGO! (Need ${optionCost(option)})`;
             }
             return;
         }
@@ -56,15 +61,10 @@ function executeMenuOption(option) {
 
     switch (option.id) {
         case 'launch_uplink':
-            state.resources -= option.cost;
+            state.resources -= optionCost(option);
             state.overlay = 'WIN';
-            try {
-                const best = JSON.parse(localStorage.getItem('probe_best') || 'null');
-                state.newRecord = !best || state.time < best.time;
-                if (state.newRecord) {
-                    localStorage.setItem('probe_best', JSON.stringify({ time: state.time, cargo: state.totalCollected }));
-                }
-            } catch (e) { /* ignore */ }
+            state.runActive = false;
+            rewardRun(true);
             localStorage.removeItem('scavenge_world_data');
             break;
 
@@ -139,7 +139,9 @@ function exportSaveData() {
  */
 function resetWorld() {
     const log = document.getElementById('log');
+    rewardRun(false); // 放弃本局也结算 DATA
     startNewExpedition();
+    state.overlay = 'BRIEFING';
     if (log) {
         log.style.color = "#55ff55";
         log.innerText = "NEW EXPEDITION STARTED. WORLD REGENERATED.";
@@ -150,13 +152,15 @@ function resetWorld() {
  * 完全重置：新世界、新资源、新升级
  */
 export function startNewExpedition() {
+    state.run = rollRun();
+    state.runActive = true;
     state.time = 0;
-    state.resources = 0;
+    state.resources = rules.startCargo();
     state.totalCollected = 0;
     state.sitesLooted = 0;
     state.probeVisionBonus = 0;
-    state.tetherMax = CONFIG.MAX_TETHER;
-    state.transportSpeed = 1;
+    state.tetherMax = rules.startTether();
+    state.transportSpeed = rules.startSpeed();
     state.worldViewRadius = CONFIG.START_VIEW_RADIUS;
     state.lastFogReductionTime = 0;
     state.movingCargo = [];

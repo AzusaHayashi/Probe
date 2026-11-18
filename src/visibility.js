@@ -1,5 +1,6 @@
 import { CONFIG } from './constants.js';
 import { state } from './gameState.js';
+import { rules } from './meta.js';
 
 /**
  * 判断点 (x, y) 是否在探头的视野内
@@ -7,7 +8,7 @@ import { state } from './gameState.js';
 export function isVisible(x, y, probe, map) {
     const dist = Math.sqrt((x - probe.x) ** 2 + (y - probe.y) ** 2);
     // 基础视野 + 升级加成
-    const viewDist = CONFIG.VIEW_DIST + (state.probeVisionBonus || 0);
+    const viewDist = CONFIG.VIEW_DIST + (state.probeVisionBonus || 0) + rules.visionBonus();
     // 增加 0.1 的距离缓冲区
     if (dist > viewDist + 0.1) return false;
 

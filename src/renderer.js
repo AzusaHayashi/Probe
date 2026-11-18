@@ -2,6 +2,8 @@ import { WorldManager } from './worldManager.js';
 import { isVisible } from './visibility.js';
 import { state } from './gameState.js';
 import { CONFIG, SITE_INFO } from './constants.js';
+import { rules, meta, lvl, UNLOCKS, PAINTS, PERKS, CURSES, unlockCost, ownsPaint, currentPaint, findMod } from './meta.js';
+import { optionCost } from './menuManager.js';
 
 /**
  * 核心渲染入口
@@ -18,13 +20,13 @@ export function render() {
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.innerText = v; };
     set('val-time', state.time);
     set('val-res', state.resources);
-    set('val-goal', CONFIG.UPLINK_COST);
+    set('val-goal', rules.uplinkCost());
     set('val-max-len', state.tetherMax);
-    set('val-signal', Math.max(0, CONFIG.SIGNAL_DEADLINE - state.time));
+    set('val-signal', Math.max(0, rules.deadline() - state.time));
     if (state.mode !== 'INSTANCE') set('val-len', state.tetherMax);
 
     const signal = document.getElementById('val-signal');
-    if (signal) signal.style.color = (CONFIG.SIGNAL_DEADLINE - state.time) < 2000 ? '#ff5555' : '';
+    if (signal) signal.style.color = (rules.deadline() - state.time) < 2000 ? '#ff5555' : '';
 
     renderLegend();
     renderOverlay();
@@ -48,7 +50,55 @@ function renderLegend() {
 }
 
 /**
- * 标题 / 帮助 / 胜利 / 失败 覆盖层
+ * 机库列表：永久升级 + 涂装 + 出发
+ */
+export function hangarItems() {
+    const items = [];
+    UNLOCKS.forEach((u, i) => items.push({ kind: 'unlock', index: i }));
+    PAINTS.forEach((p, i) => items.push({ kind: 'paint', index: i }));
+    items.push({ kind: 'launch' });
+    return items;
+}
+
+function runModsLine() {
+    if (!state.run || !state.run.perk) return '';
+    const perk = findMod(PERKS, state.run.perk), curse = findMod(CURSES, state.run.curse);
+    return `<p><span class="perk">PERK ${perk.label}</span>: ${perk.desc}<br><span class="curse">CURSE ${curse.label}</span>: ${curse.desc}</p>`;
+}
+
+function renderHangar() {
+    const items = hangarItems();
+    let html = `<h2 class="win">--- HANGAR ---</h2>
+<p style="text-align:center">DATA: <b>${meta.data}</b> · runs ${meta.runs} · wins ${meta.wins}${meta.best !== null ? ' · best ' + meta.best + ' min' : ''}</p>`;
+    let lastKind = '';
+    items.forEach((it, idx) => {
+        if (it.kind !== lastKind) {
+            if (it.kind === 'unlock') html += '<div class="sec">PERMANENT UPGRADES</div>';
+            if (it.kind === 'paint') html += '<div class="sec">PAINT BOOTH</div>';
+            if (it.kind === 'launch') html += '<div class="sec">&nbsp;</div>';
+            lastKind = it.kind;
+        }
+        const sel = idx === state.hangarIndex;
+        let text = '', right = '';
+        if (it.kind === 'unlock') {
+            const u = UNLOCKS[it.index], l = lvl(u.id);
+            text = `${u.label} <span class="dim-line">${u.desc}</span>`;
+            right = l >= u.max ? `MAX` : `Lv${l}/${u.max} · ${unlockCost(u, l)} DATA`;
+        } else if (it.kind === 'paint') {
+            const p = PAINTS[it.index];
+            text = `<span style="color:${p.color};text-shadow:0 0 6px ${p.color}">■ @ ^</span> ${p.label}`;
+            right = currentPaint().id === p.id ? 'EQUIPPED' : (ownsPaint(p.id) ? 'OWNED' : `${p.cost} DATA`);
+        } else {
+            text = state.runActive ? '&gt;&gt; BACK TO CURRENT RUN' : '&gt;&gt; LAUNCH NEW RUN';
+        }
+        html += `<div class="h-item${sel ? ' sel' : ''}" data-idx="${idx}"><span>${sel ? '&gt; ' : ''}${text}</span><span class="h-right">${right}</span></div>`;
+    });
+    html += `<p class="dim-line" style="text-align:center">↑↓ choose · EXEC buy / equip / launch · tap works too</p>`;
+    return html;
+}
+
+/**
+ * 标题 / 帮助 / 机库 / 简报 / 胜利 / 失败 覆盖层
  */
 export function renderOverlay() {
     const el = document.getElementById('overlay');
@@ -56,10 +106,8 @@ export function renderOverlay() {
     if (!state.overlay) { el.style.display = 'none'; return; }
     el.style.display = 'flex';
 
-    let best = null;
-    try { best = JSON.parse(localStorage.getItem('probe_best') || 'null'); } catch (e) { /* ignore */ }
-    const bestLine = best ? `<p class="dim-line">BEST RUN: uplink at ${best.time} min</p>` : '';
-    const hasSave = !!localStorage.getItem('scavenge_world_data');
+    const bestLine = meta.best !== null ? `<p class="dim-line">BEST RUN: uplink at ${meta.best} min</p>` : '';
+    const dataLine = `<p>DATA earned: <b>+${state.lastReward || 0}</b> · bank: <b>${meta.data}</b></p>`;
 
     let html = '';
     if (state.overlay === 'TITLE' || state.overlay === 'HELP') {
@@ -71,34 +119,46 @@ export function renderOverlay() {
 |_|  |_|_\\\\___/|___/|___|
 </pre>
 <p>The fog is eating the world. You run a tethered probe from a mobile rig.</p>
-<p><b>GOAL:</b> haul <b>${CONFIG.UPLINK_COST} cargo</b> to the <b>COMMAND CENTER (I)</b> and launch the uplink beacon before the signal dies at <b>${CONFIG.SIGNAL_DEADLINE} min</b>.</p>
+<p><b>GOAL:</b> haul <b>${rules.uplinkCost()} cargo</b> to the <b>COMMAND CENTER (I)</b> and launch the uplink beacon before the signal dies at <b>${rules.deadline()} min</b>.</p>
 <ul>
-<li>Overworld: walk onto <b>F</b>/<b>S</b>/<b>M</b> and press EXEC to send the probe in. Each step costs 5 min. Vision shrinks every ${CONFIG.FOG_INTERVAL} min.</li>
+<li>Overworld: walk onto <b>F</b>/<b>S</b>/<b>M</b> and press EXEC to send the probe in. Each step costs time. Vision shrinks as time passes.</li>
 <li>Probe: the first press turns it, the next moves. It only sees in a cone. Walking back over the tether retracts it.</li>
 <li>Stand on <b>O</b> and press EXEC: cargo rides the tether home. Seen cargo can rot away, so grab it fast.</li>
-<li>EXEC beside a <b>+</b> door to hack it (3–5 min). Return to <b>H</b> and press EXEC twice to evacuate.</li>
-<li><b>W</b> workshop: longer tether and faster transport. <b>I</b>: vision upgrade, the beacon, export save.</li>
-<li><b>E</b> is a save point. The game also auto-saves when you leave a site.</li>
+<li>EXEC beside a <b>+</b> door to hack it. Return to <b>H</b> and press EXEC twice to evacuate.</li>
+<li><b>W</b> workshop: longer tether, faster transport. <b>I</b>: the beacon, vision upgrade, export save.</li>
+<li><b>Roguelite:</b> every run, won or lost, earns <b>DATA</b>. Spend it in the <b>HANGAR</b> on permanent upgrades and paint. Each run deals a random perk and curse. Every win makes the next beacon cost more.</li>
 </ul>
 <p class="dim-line">Keys: WASD / arrows, Space / Enter = EXEC. On phone use the pad.</p>
 ${bestLine}
-<p class="blink">PRESS EXEC TO ${state.overlay === 'HELP' ? 'RESUME' : (hasSave ? 'CONTINUE' : 'BEGIN')}</p>`;
+<p class="blink">PRESS EXEC TO ${state.overlay === 'HELP' ? 'RESUME' : (state.runActive ? 'CONTINUE RUN' : 'ENTER HANGAR')}</p>`;
+    } else if (state.overlay === 'HANGAR') {
+        html = renderHangar();
+    } else if (state.overlay === 'BRIEFING') {
+        html = `
+<h2 class="win">RUN BRIEFING${rules.depth() ? ' · DEPTH ' + rules.depth() : ''}</h2>
+${runModsLine()}
+<p>Beacon: <b>${rules.uplinkCost()} cargo</b> · Signal: <b>${rules.deadline()} min</b> · Tether: <b>${state.tetherMax}</b> · Start cargo: <b>${state.resources}</b></p>
+<p class="blink">PRESS EXEC TO DEPLOY</p>`;
     } else if (state.overlay === 'WIN') {
         html = `
 <h2 class="win">UPLINK ESTABLISHED</h2>
 <p>The beacon cuts through the fog. Rescue is inbound.</p>
 <p>Time: <b>${state.time} min</b> · Cargo hauled: <b>${state.totalCollected}</b> · Sites cleared: <b>${state.sitesLooted}</b></p>
+${dataLine}
 ${state.newRecord ? '<p class="win">NEW BEST RUN!</p>' : bestLine}
-<p class="blink">PRESS EXEC FOR A NEW EXPEDITION</p>`;
+<p>Next run goes deeper: the beacon needs 5 more cargo.</p>
+<p class="blink">PRESS EXEC FOR THE HANGAR</p>`;
     } else if (state.overlay === 'LOSE') {
         html = `
 <h2 class="lose">SIGNAL LOST</h2>
-<p>The fog closed in at ${CONFIG.SIGNAL_DEADLINE} min. The rig goes dark.</p>
-<p>Cargo hauled: <b>${state.totalCollected}</b> · In the hold: <b>${state.resources}</b>/${CONFIG.UPLINK_COST} · Sites cleared: <b>${state.sitesLooted}</b></p>
-${bestLine}
-<p class="blink">PRESS EXEC TO TRY AGAIN</p>`;
+<p>The fog closed in at ${rules.deadline()} min. The rig goes dark.</p>
+<p>Cargo hauled: <b>${state.totalCollected}</b> · In the hold: <b>${state.resources}</b>/${rules.uplinkCost()} · Sites cleared: <b>${state.sitesLooted}</b></p>
+${dataLine}
+<p class="blink">PRESS EXEC FOR THE HANGAR</p>`;
     }
     el.innerHTML = '<div class="overlay-box">' + html + '</div>';
+    const sel = el.querySelector('.h-item.sel');
+    if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: 'nearest' });
 }
 
 /**
@@ -132,7 +192,7 @@ export function renderWorld() {
 
             if (isP) {
                 char = "@";
-                className = "obj-highlight";
+                className = "me";
             } else if (inSight) {
                 char = worldMap[y][x];
                 if (char !== ".") {
@@ -211,7 +271,9 @@ export function renderInstance() {
             }
 
             let className = "fog";
-            if (inSight || isP || isCargo) {
+            if (isP) {
+                className = "me";
+            } else if (inSight || isCargo) {
                 className = "obj-highlight";
             } else if (isPipeline) {
                 className = "obj-highlight";
@@ -245,7 +307,8 @@ export function renderMenu() {
         const isSelected = index === state.menu.currentIndex;
         const prefix = isSelected ? "> " : "  ";
         const style = isSelected ? "color: #fff; background: #222;" : "color: #888;";
-        const costText = opt.cost > 0 ? " (Cost: " + opt.cost + " Cargo)" : "";
+        const c = optionCost(opt);
+        const costText = c > 0 ? " (Cost: " + c + " Cargo)" : "";
         
         html += '<div style="padding: 10px; margin: 5px 0; cursor: pointer; ' + style + '">';
         html += prefix + opt.label + costText;

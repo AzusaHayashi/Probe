@@ -2,6 +2,7 @@ import { WorldManager } from './worldManager.js';
 import { state, advanceTime, checkCargoCollection, checkCargoDecay, updateInstanceCargoVisibility } from './gameState.js';
 import { render } from './renderer.js';
 import { CONFIG, SITE_INFO } from './constants.js';
+import { rules } from './meta.js';
 
 /**
  * 处理移动指令
@@ -216,7 +217,7 @@ export function executeAction() {
             let tx = state.probe.x + ax, ty = state.probe.y + ay;
             if(state.map[ty] && state.map[ty][tx] === '+') {
                 state.map[ty][tx] = '.'; // 门变地板
-                const cost = Math.floor(Math.random() * 3) + 3; // 3 to 5
+                const cost = rules.doorCost(Math.random);
                 advanceTime(cost);
                 log.innerText = `DOOR BYPASSED. (+${cost} TIME)`;
                 acted = true;
@@ -303,7 +304,7 @@ export function moveInWorld(key) {
         state.worldPos.x = nx; state.worldPos.y = ny;
         WorldManager.state.playerPos = { x: nx, y: ny };
         state.saveConfirm = false;
-        advanceTime(5); // 世界上移动消耗 5 分钟
+        advanceTime(rules.worldStep()); // 世界上移动消耗时间（默认 5 分钟）
         const tile = WorldManager.state.overworld[ny][nx];
         const log = document.getElementById('log');
         if (log && SITE_INFO[tile]) {
